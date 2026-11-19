@@ -9,8 +9,8 @@ import (
 
 func TestAdaptivePaddingSharedProfilePreservedBySDK(t *testing.T) {
 	link, err := profile.Encode(profile.Config{
-		Version: 1,
-		Servers: []string{"https://edge.example.com"},
+		Version:  1,
+		Servers:  []string{"https://edge.example.com"},
 		Username: "alice", Password: "secret",
 		AdaptivePadding: true,
 	})
@@ -35,11 +35,11 @@ func TestAdaptivePaddingRejectsConflictingClientModes(t *testing.T) {
 
 func TestAdaptivePaddingRejectsBondProfile(t *testing.T) {
 	_, err := profile.Encode(profile.Config{
-		Version: 1,
-		Servers: []string{"https://a.example.com", "https://b.example.com"},
+		Version:  1,
+		Servers:  []string{"https://a.example.com", "https://b.example.com"},
 		Username: "alice", Password: "secret",
 		AdaptivePadding: true,
-		Bond: true,
+		Bond:            true,
 	})
 	if err == nil {
 		t.Fatal("bond profile accepted unsupported adaptive padding")
