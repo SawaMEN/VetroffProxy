@@ -306,3 +306,20 @@ func TestCheckConfigReportsTLSMode(t *testing.T) {
 		t.Fatal("config check leaked secrets")
 	}
 }
+
+
+func TestCheckConfigNativeBundleIsValidatedOffline(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "connection.txt")
+	link, err := profile.Encode(profile.Config{Version: 1, Servers: []string{"https://unresolvable.invalid"}, Username: "test", Password: "secret", TLSBackend: "auto"})
+	if err != nil { t.Fatal(err) }
+	if err := profile.WriteSecretFile(path, link); err != nil { t.Fatal(err) }
+	// A non-existent native runtime must not silently select Go TLS.
+	r, err, _ := runConfigReport(t, "--link-file", path, "--engine", "firefox", "--necko-bundle", path+".missing")
+	if err == nil || r.OK {
+		t.Fatal("missing Necko bundle accepted")
+	}
+	// The bundle selector is never a server config setting.
+	if err := checkConfigCommand([]string{"--config", path, "--necko-bundle", path+".missing"}, &bytes.Buffer{}); err == nil {
+		t.Fatal("client bundle allowed in server config check")
+	}
+}

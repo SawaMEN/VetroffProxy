@@ -55,6 +55,7 @@ func checkConfigCommand(args []string, out io.Writer) error {
 	link := fs.String("link-file", "", "private client profile file (stdin is not supported)")
 	ca := fs.String("ca-cert", "", "additional client trusted certificate PEM")
 	engine := fs.String("engine", "builtin", "client engine: builtin, auto, mozilla, necko or firefox")
+	neckoBundle := fs.String("necko-bundle", "", "verified native Necko bundle (client only)")
 	jsonOutput := fs.Bool("json", false, "print a schema-1 JSON report")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -71,7 +72,7 @@ func checkConfigCommand(args []string, out io.Writer) error {
 	if *server != "" {
 		conflict := false
 		fs.Visit(func(f *flag.Flag) {
-			if f.Name == "engine" || f.Name == "ca-cert" {
+			if f.Name == "engine" || f.Name == "ca-cert" || f.Name == "necko-bundle" {
 				conflict = true
 			}
 		})
@@ -85,7 +86,7 @@ func checkConfigCommand(args []string, out io.Writer) error {
 		checkServerConfig(*server, &r)
 	} else {
 		r.Role = "client"
-		checkClientConfig(*link, *ca, *engine, &r)
+		checkClientConfig(*link, *ca, *engine, *neckoBundle, &r)
 	}
 	if *jsonOutput {
 		if err := json.NewEncoder(out).Encode(r); err != nil {
@@ -209,13 +210,13 @@ func checkServerConfig(path string, r *configReport) {
 	}
 }
 
-func checkClientConfig(path, ca, engine string, r *configReport) {
+func checkClientConfig(path, ca, engine, bundle string, r *configReport) {
 	c, err := profile.ReadSecretFile(path)
 	r.add("client_profile", "private regular connection file, valid profile and compatible options", err)
 	if err != nil {
 		return
 	}
-	plan, err := transportengine.Resolve(transportengine.Config{Engine: engine, Transport: c.Transport, TLSBackend: c.TLSBackend})
+	plan, err := transportengine.Resolve(transportengine.Config{Engine: engine, NeckoBundle: bundle, Transport: c.Transport, TLSBackend: c.TLSBackend})
 	r.add("engine", "requested engine is compatible with this build and profile", err)
 	if err != nil {
 		return
