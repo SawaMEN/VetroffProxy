@@ -94,6 +94,31 @@ malformed framed data as unpadded traffic. Before eight records, clean EOF at a
 record boundary is permitted. The decoder does not expose padding. This framing
 is inside encrypted transport and is not a Firefox traffic profile.
 
+## Optional adaptive-v1 TCP padding (Stealth stage 1)
+
+Client requests `X-Vetroff-Padding: adaptive-v1` and the server must echo the
+identical value on a successful authenticated CONNECT. Unrecognized, absent or
+duplicate confirmation is terminal; a client must never silently downgrade.
+The server must explicitly enable adaptive support. The capability token
+`padding-adaptive-v1` can be required through strict version negotiation.
+This is an additive optional framing mode: `initial-v1` remains unchanged.
+
+Each direction independently frames **every** nonempty record, including after
+the eighth, without a raw tail. A frame has a 2-byte big-endian payload length
+(1..16384), a 1-byte padding length, then the payload and that many zero-fill
+padding bytes. Maximum legal padding for a record with N payload bytes is
+`min(255, 24 + floor(N/8))`. The writer chooses a random length within that
+bound. A reader rejects zero/oversize lengths, excessive padding, truncated
+headers and bodies without forwarding the malformed payload. Clean EOF at a
+record boundary is a normal half-close. There are no standalone padding frames.
+
+This limits *per-record* overhead, but it can still be substantial for very
+small writes; it does not impose a total connection bandwidth budget. Framing
+changes the byte stream delivered inside authenticated HTTPS and can indirectly
+change network packet sizes; it neither modifies TLS/QUIC packets directly nor
+establishes browser fingerprint equivalence or TSPU bypass. Both peers must
+support the mode, and UDP relays, Bond and discovery are not padded by it.
+
 ## Application UDP relay
 
 UDP is opt-in on both ends and independent of the outer H3/QUIC transport.
