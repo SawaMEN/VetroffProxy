@@ -26,31 +26,31 @@ import (
 )
 
 type ServerConfig struct {
-	EgressProxy    string                  `json:"egress_proxy,omitempty"`
-	EgressDNS      string                  `json:"egress_dns,omitempty"`
-	ProtocolPolicy contract.ProtocolPolicy `json:"protocol_policy,omitempty"`
-	UsersFile      string                  `json:"users_file,omitempty"`
-	UsersState     string                  `json:"users_state,omitempty"`
-	XHTTPPath      string                  `json:"xhttp_path,omitempty"`
-	XHTTPHost      string                  `json:"xhttp_host,omitempty"`
-	Version        int                     `json:"v"`
-	H3Listen       string                  `json:"h3_listen,omitempty"`
-	EnableUDP      bool                    `json:"enable_udp,omitempty"`
-	AdaptivePadding bool                 `json:"adaptive_padding,omitempty"`
-	Listen         string                  `json:"listen"`
-	Certificate    string                  `json:"cert"`
-	PrivateKey     string                  `json:"key"`
-	Username       string                  `json:"username"`
-	Password       string                  `json:"password"`
-	WebRoot        string                  `json:"web_root,omitempty"`
-	ClusterFile    string                  `json:"cluster_file,omitempty"`
-	BondHub        bool                    `json:"bond_hub,omitempty"`
-	BondUpstream   string                  `json:"bond_upstream,omitempty"`
-	BondCA         string                  `json:"bond_ca,omitempty"`
-	BondSNI        string                  `json:"bond_sni,omitempty"`
-	BondPin        string                  `json:"bond_pin_sha256,omitempty"`
-	MaxTunnels     int                     `json:"max_tunnels"`
-	MaxConnections int                     `json:"max_connections"`
+	EgressProxy     string                  `json:"egress_proxy,omitempty"`
+	EgressDNS       string                  `json:"egress_dns,omitempty"`
+	ProtocolPolicy  contract.ProtocolPolicy `json:"protocol_policy,omitempty"`
+	UsersFile       string                  `json:"users_file,omitempty"`
+	UsersState      string                  `json:"users_state,omitempty"`
+	XHTTPPath       string                  `json:"xhttp_path,omitempty"`
+	XHTTPHost       string                  `json:"xhttp_host,omitempty"`
+	Version         int                     `json:"v"`
+	H3Listen        string                  `json:"h3_listen,omitempty"`
+	EnableUDP       bool                    `json:"enable_udp,omitempty"`
+	AdaptivePadding bool                    `json:"adaptive_padding,omitempty"`
+	Listen          string                  `json:"listen"`
+	Certificate     string                  `json:"cert"`
+	PrivateKey      string                  `json:"key"`
+	Username        string                  `json:"username"`
+	Password        string                  `json:"password"`
+	WebRoot         string                  `json:"web_root,omitempty"`
+	ClusterFile     string                  `json:"cluster_file,omitempty"`
+	BondHub         bool                    `json:"bond_hub,omitempty"`
+	BondUpstream    string                  `json:"bond_upstream,omitempty"`
+	BondCA          string                  `json:"bond_ca,omitempty"`
+	BondSNI         string                  `json:"bond_sni,omitempty"`
+	BondPin         string                  `json:"bond_pin_sha256,omitempty"`
+	MaxTunnels      int                     `json:"max_tunnels"`
+	MaxConnections  int                     `json:"max_connections"`
 }
 type Options struct {
 	ProtocolPolicy                                                                                  contract.ProtocolPolicy
