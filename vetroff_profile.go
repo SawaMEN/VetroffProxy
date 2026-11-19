@@ -43,6 +43,7 @@ func ClientConfigFromLink(link string) (ClientConfig, error) {
 		XHTTPHost:                  imported.XHTTPHost,
 		Balance:                    imported.Balance,
 		Padding:                    imported.Padding,
+		AdaptivePadding:            imported.AdaptivePadding,
 		Bond:                       imported.Bond,
 		BondDiscover:               imported.Discover,
 		BondPipeline:               pipeline,
