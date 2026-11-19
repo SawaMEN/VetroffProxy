@@ -24,7 +24,7 @@ ShadowTLS показывает реальное TLS-рукопожатие с в
 ```sh
 ./vetroff setup --server https://vpn.example.org \
   --listen 127.0.0.1:8443 \
-  --transport h2-connect --security tls \
+  --transport h2-post --protocol-policy strict --security tls \
   --cert /etc/ssl/vetroff/fullchain.pem \
   --key /etc/ssl/vetroff/privkey.pem --out server-config
 
