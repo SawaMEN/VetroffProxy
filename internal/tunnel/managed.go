@@ -42,12 +42,12 @@ func (c *Client) validateManaged() error {
 	}
 	if c.fullManagedHTTP() {
 		connect := c.nativeTransport == "h2-connect" || c.nativeTransport == "h3-connect"
-		if connect && (c.Padding || c.RequireProtocolNegotiation) {
+		if connect && (c.Padding || c.AdaptivePadding || c.RequireProtocolNegotiation) {
 			return errors.New("Necko CONNECT does not forward extension headers; use h2-post or XHTTP for padding/strict negotiation")
 		}
 		return nil
 	}
-	if c.Padding || c.UDPStreaming || c.UDPMultiNode || c.RequireProtocolNegotiation || len(c.fallbackServers) > 0 || c.bondClient != nil || c.bondDiscovery != nil || (c.balance != "" && c.balance != "failover") {
+	if c.Padding || c.AdaptivePadding || c.UDPStreaming || c.UDPMultiNode || c.RequireProtocolNegotiation || len(c.fallbackServers) > 0 || c.bondClient != nil || c.bondDiscovery != nil || (c.balance != "" && c.balance != "failover") {
 		return errors.New("Necko supports TCP CONNECT and bounded UDP v1 without padding, UDP streaming, bond, balancing, fallback servers or draft negotiation")
 	}
 	if c.EnableUDP && c.nativeTransport != "h2-connect" {
