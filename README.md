@@ -23,10 +23,11 @@ go build -o vetroff ./cmd/vetroff
 ## Возможности
 
 - HTTP/2, HTTP/3, WebSocket и XHTTP.
+- Внешний ShadowTLS v3 TCP-мост через официальный бинарник с генерацией приватных конфигураций.
 - UDP, несколько нод, Bonding и выход через SOCKS5-каскад.
 - Go TLS/quic-go; NSS и Necko в соответствующих Linux-сборках.
 
-[Документация](docs/README.md) · [Настройки](docs/FEATURES.md) · [Go SDK](docs/INTEGRATION.md)
+[Документация](docs/README.md) · [Настройки](docs/FEATURES.md) · [ShadowTLS v3](docs/SHADOWTLS.md) · [Go SDK](docs/INTEGRATION.md)
 
 TUN и маршрутизацию настраивает приложение-хост. Протокол и SDK экспериментальные;
 обход DPI и совпадение с Firefox не гарантируются.

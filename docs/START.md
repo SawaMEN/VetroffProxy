@@ -51,6 +51,8 @@ curl --socks5-hostname 127.0.0.1:1080 https://example.com/
 или `client --security tls` (без профиля). Это тот же TLS 1.3, что уже
 используется по умолчанию, а не новый протокол.
 
+Для внешнего ShadowTLS v3 поверх TCP см. [пошаговую настройку](SHADOWTLS.md).
+
 ### Нативный Firefox-транспорт (Linux AMD64/ARM64)
 
 В полном Mozilla-архиве можно включить строгий режим:
