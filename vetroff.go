@@ -49,33 +49,33 @@ type ClientConfig struct {
 	// False preserves builtin interoperability. Configure both ends explicitly.
 	RequireProtocolNegotiation bool
 
-	ServerURL            string
-	Credentials          Credentials
-	CACertFile           string
-	Engine               string // Empty/builtin preserves old selection; auto uses Necko when compatible, otherwise NSS/Neqo or Go; mozilla and necko force a backend.
-	TLSBackend           string // Empty selects auto (NSS for TCP if available, Go for default H3); Neqo uses NSS.
-	Transport            string // Empty selects h2-connect.
-	QUICBackend          string // Empty/quic-go preserves the default; neqo is an opt-in build.
-	H3Fallback           string // Empty/none or h2; only before a Neqo HTTP request is created.
-	QUICHandshakeTimeout time.Duration
-	ServerName, SPKIPin  string
-	NodePinsFile         string // Owner-only per-origin trust file; configure all explicit nodes.
-	XHTTPPath, XHTTPHost string
-	HTTP2ReceiveProfile  string
-	TLSClientProfile     string // Local opt-in NSS preferences; empty keeps the default.
-	Padding              bool
-	AdaptivePadding      bool // Continuous bounded framing; requires matching server support.
-	EnableUDP            bool // Experimental datagram API and SOCKS5 UDP; off by default.
-	UDPMultiNode         bool // Pin destination flows to configured UDP exits.
-	UDPStreaming         bool // Opt-in v2 persistent UDP stream; requires EnableUDP.
-	ConnectTimeout       time.Duration
-	MaxConnections       int // Combined TCP/UDP connections and pending operations; 0 uses 256.
-	FallbackServers      []string
+	ServerURL              string
+	Credentials            Credentials
+	CACertFile             string
+	Engine                 string // Empty/builtin preserves old selection; auto uses Necko when compatible, otherwise NSS/Neqo or Go; mozilla and necko force a backend.
+	TLSBackend             string // Empty selects auto (NSS for TCP if available, Go for default H3); Neqo uses NSS.
+	Transport              string // Empty selects h2-connect.
+	QUICBackend            string // Empty/quic-go preserves the default; neqo is an opt-in build.
+	H3Fallback             string // Empty/none or h2; only before a Neqo HTTP request is created.
+	QUICHandshakeTimeout   time.Duration
+	ServerName, SPKIPin    string
+	NodePinsFile           string // Owner-only per-origin trust file; configure all explicit nodes.
+	XHTTPPath, XHTTPHost   string
+	HTTP2ReceiveProfile    string
+	TLSClientProfile       string // Local opt-in NSS preferences; empty keeps the default.
+	Padding                bool
+	AdaptivePadding        bool // Continuous bounded framing; requires matching server support.
+	EnableUDP              bool // Experimental datagram API and SOCKS5 UDP; off by default.
+	UDPMultiNode           bool // Pin destination flows to configured UDP exits.
+	UDPStreaming           bool // Opt-in v2 persistent UDP stream; requires EnableUDP.
+	ConnectTimeout         time.Duration
+	MaxConnections         int // Combined TCP/UDP connections and pending operations; 0 uses 256.
+	FallbackServers        []string
 	FallbackAttemptTimeout time.Duration
-	Balance              string // Empty preserves failover; adaptive enables passive-metric route selection.
-	Bond                 bool   // Bond lanes across explicitly trusted servers.
-	BondDiscover         bool   // Discover lanes from the primary server.
-	BondPipeline         int    // 0 (auto), 4 or 8.
+	Balance                string // Empty preserves failover; adaptive enables passive-metric route selection.
+	Bond                   bool   // Bond lanes across explicitly trusted servers.
+	BondDiscover           bool   // Discover lanes from the primary server.
+	BondPipeline           int    // 0 (auto), 4 or 8.
 }
 
 // Client is configured at construction and may be shared by concurrent callers.
@@ -171,7 +171,9 @@ func NewClient(config ClientConfig) (*Client, error) {
 		} else {
 			err = core.EnableBond()
 		}
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err := core.Prepare(context.Background()); err != nil {
 		return nil, err
@@ -380,7 +382,7 @@ type ServerConfig struct {
 	MaxTunnels               int  // 0 uses 256.
 	DialTimeout              time.Duration
 	Padding                  bool
-	AdaptivePadding          bool // Accept opt-in adaptive-v1 mode alongside initial-v1.
+	AdaptivePadding          bool         // Accept opt-in adaptive-v1 mode alongside initial-v1.
 	Cover                    http.Handler // Public site for ordinary/rejected requests; nil returns 404.
 }
 
