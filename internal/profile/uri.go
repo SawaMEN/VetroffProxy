@@ -42,6 +42,7 @@ type Config struct {
 	Discover       bool                    `json:"discover,omitempty"`
 	Pipeline       string                  `json:"pipeline,omitempty"`
 	Padding        bool                    `json:"padding,omitempty"`
+	AdaptivePadding bool                `json:"adaptive_padding,omitempty"`
 	ConnectTimeout string                  `json:"connect_timeout,omitempty"`
 	AttemptTimeout string                  `json:"attempt_timeout,omitempty"`
 }
@@ -120,10 +121,13 @@ func (c *Config) normalize() error {
 	if c.Pipeline != "auto" && c.Pipeline != "4" && c.Pipeline != "8" {
 		return invalid()
 	}
+	if c.Padding && c.AdaptivePadding {
+		return invalid()
+	}
 	if c.Discover && (!c.Bond || len(c.Servers) != 1) {
 		return invalid()
 	}
-	if c.Bond && ((!c.Discover && len(c.Servers) < 2) || c.Padding || c.Balance == "adaptive") {
+	if c.Bond && ((!c.Discover && len(c.Servers) < 2) || c.Padding || c.AdaptivePadding || c.Balance == "adaptive") {
 		return invalid()
 	}
 	if c.ConnectTimeout == "" {
@@ -192,7 +196,7 @@ func uniqueFields(data []byte) bool {
 		return false
 	}
 	seen := make(map[string]bool)
-	allowed := map[string]bool{"v": true, "servers": true, "username": true, "password": true, "tls": true, "transport": true, "xhttp_path": true, "xhttp_host": true, "sni": true, "pin_sha256": true, "encryption": true, "balance": true, "bond": true, "discover": true, "pipeline": true, "padding": true, "connect_timeout": true, "attempt_timeout": true}
+	allowed := map[string]bool{"v": true, "servers": true, "username": true, "password": true, "tls": true, "transport": true, "xhttp_path": true, "xhttp_host": true, "sni": true, "pin_sha256": true, "encryption": true, "balance": true, "bond": true, "discover": true, "pipeline": true, "padding": true, "adaptive_padding": true, "connect_timeout": true, "attempt_timeout": true}
 	allowed["protocol_policy"] = true
 	for decoder.More() {
 		token, err := decoder.Token()
