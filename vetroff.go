@@ -64,6 +64,7 @@ type ClientConfig struct {
 	HTTP2ReceiveProfile  string
 	TLSClientProfile     string // Local opt-in NSS preferences; empty keeps the default.
 	Padding              bool
+	AdaptivePadding      bool // Continuous bounded framing; requires matching server support.
 	EnableUDP            bool // Experimental datagram API and SOCKS5 UDP; off by default.
 	UDPMultiNode         bool // Pin destination flows to configured UDP exits.
 	UDPStreaming         bool // Opt-in v2 persistent UDP stream; requires EnableUDP.
@@ -92,6 +93,9 @@ type Client struct {
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
+	if config.Padding && config.AdaptivePadding {
+		return nil, errors.New("initial and adaptive padding are mutually exclusive")
+	}
 	if config.MaxConnections < 0 || config.ConnectTimeout < 0 || config.FallbackAttemptTimeout < 0 {
 		return nil, errors.New("negative client limit or timeout")
 	}
@@ -119,7 +123,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 	}()
 	plan, err := transportengine.Resolve(transportengine.Config{
 		Engine: config.Engine, Transport: config.Transport, NeckoBundle: config.NeckoBundle,
-		AutoNeckoExcluded: ((config.RequireProtocolNegotiation || config.Padding) && !transportengine.NativeHTTPHeaders(config.Transport)),
+		AutoNeckoExcluded: ((config.RequireProtocolNegotiation || config.Padding || config.AdaptivePadding) && !transportengine.NativeHTTPHeaders(config.Transport)),
 		TLSBackend:        config.TLSBackend, QUICBackend: config.QUICBackend,
 		H3Fallback: config.H3Fallback, QUICHandshakeTimeout: config.QUICHandshakeTimeout,
 		TLSClientProfile: config.TLSClientProfile, HTTP2ReceiveProfile: config.HTTP2ReceiveProfile,
@@ -157,6 +161,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 	core.FallbackAttemptTimeout = config.FallbackAttemptTimeout
 	core.BondPipeline = config.BondPipeline
 	core.Padding = config.Padding
+	core.AdaptivePadding = config.AdaptivePadding
 	core.EnableUDP = config.EnableUDP
 	core.UDPStreaming = config.UDPStreaming
 	core.UDPMultiNode = config.UDPMultiNode
@@ -375,6 +380,7 @@ type ServerConfig struct {
 	MaxTunnels               int  // 0 uses 256.
 	DialTimeout              time.Duration
 	Padding                  bool
+	AdaptivePadding          bool // Accept opt-in adaptive-v1 mode alongside initial-v1.
 	Cover                    http.Handler // Public site for ordinary/rejected requests; nil returns 404.
 }
 
@@ -397,7 +403,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{core: &tunnel.Server{Egress: exit, RequireProtocolNegotiation: config.RequireProtocolNegotiation, Access: config.Access, Username: config.Credentials.Username, Password: config.Credentials.Password, XHTTPSettings: settings, AllowPrivate: config.AllowPrivateDestinations, EnableUDP: config.EnableUDP, MaxTunnels: config.MaxTunnels, DialTimeout: config.DialTimeout, Padding: config.Padding, Cover: config.Cover}}, nil
+	return &Server{core: &tunnel.Server{Egress: exit, RequireProtocolNegotiation: config.RequireProtocolNegotiation, Access: config.Access, Username: config.Credentials.Username, Password: config.Credentials.Password, XHTTPSettings: settings, AllowPrivate: config.AllowPrivateDestinations, EnableUDP: config.EnableUDP, MaxTunnels: config.MaxTunnels, DialTimeout: config.DialTimeout, Padding: config.Padding, AdaptivePadding: config.AdaptivePadding, Cover: config.Cover}}, nil
 }
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.TLS == nil || r.TLS.Version < tls.VersionTLS13 {
