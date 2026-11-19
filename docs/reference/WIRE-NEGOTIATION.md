@@ -69,6 +69,7 @@ duplicates, CR/LF/control bytes and uppercase tokens are invalid.
 | udp-v1 | one-shot relay; requires EnableUDP and a non-relay exit |
 | udp-stream-v2 | framed streaming relay; same opt-in requirement |
 | padding-initial-v1 | initial-eight-record padding; requires Padding |
+| padding-adaptive-v1 | continuous bounded frame padding; requires AdaptivePadding |
 
 Strict reference clients require tcp for TCP requests, adding
 padding-initial-v1 when enabled; UDP requests require their exact UDP mode.
@@ -79,7 +80,7 @@ The independent padding request/echo remains mandatory when padding is selected.
 A compatible authenticated offer receives `X-Vetroff-Version` with the exact
 selected version and `X-Vetroff-Capabilities` listing enabled capabilities
 using the same list grammar. The list is deterministic: tcp, then udp-v1 and
-udp-stream-v2 if enabled, then padding-initial-v1 if enabled. Confirmation
+udp-stream-v2 if enabled, then padding-initial-v1 and padding-adaptive-v1 if enabled. Confirmation
 headers can accompany an application error; they do not imply target setup
 success. Clients require both successful route status and compatible headers.
 
