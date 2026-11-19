@@ -64,7 +64,7 @@ func DefaultNeckoBundle() string {
 
 func Resolve(cfg Config) (Plan, error) {
 	if cfg.NeckoBundle != "" && cfg.Engine != "necko" && cfg.Engine != "auto" && cfg.Engine != "firefox" {
-		return Plan{}, errors.New("Necko bundle requires engine necko or auto")
+		return Plan{}, errors.New("Necko bundle requires engine necko, firefox or auto")
 	}
 	switch cfg.Engine {
 	case "", "builtin":
