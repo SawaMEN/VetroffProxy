@@ -104,6 +104,10 @@ func (s *Server) acceptProtocol(w http.ResponseWriter, r *http.Request) bool {
 			available["padding-initial-v1"] = true
 			capabilities = append(capabilities, "padding-initial-v1")
 		}
+		if s.AdaptivePadding {
+			available["padding-adaptive-v1"] = true
+			capabilities = append(capabilities, "padding-adaptive-v1")
+		}
 	}
 	for _, token := range tokens {
 		if !available[token] {
@@ -123,8 +127,13 @@ func (c *Client) requestProtocol(r *http.Request, capability string) {
 		return
 	}
 	r.Header.Set(protocolVersionHeader, buildinfo.ProtocolDraft)
-	if capability == "tcp" && c.Padding {
-		capability += ",padding-initial-v1"
+	if capability == "tcp" {
+		switch c.paddingMode() {
+		case paddingVersion:
+			capability += ",padding-initial-v1"
+		case adaptivePaddingVersion:
+			capability += ",padding-adaptive-v1"
+		}
 	}
 	r.Header.Set(protocolRequireHeader, capability)
 }
@@ -149,7 +158,8 @@ func (c *Client) verifyProtocol(r *http.Response, capability string) error {
 	for _, token := range tokens {
 		confirmed[token] = true
 	}
-	if !confirmed[capability] || (capability == "tcp" && c.Padding && !confirmed["padding-initial-v1"]) {
+	if !confirmed[capability] || (capability == "tcp" && c.Padding && !confirmed["padding-initial-v1"]) ||
+		(capability == "tcp" && c.AdaptivePadding && !confirmed["padding-adaptive-v1"]) {
 		return ErrProtocolNegotiation
 	}
 	return nil
