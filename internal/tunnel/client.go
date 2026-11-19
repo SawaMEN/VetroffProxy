@@ -65,6 +65,9 @@ type Client struct {
 	ConnectTimeout time.Duration
 	// Padding is an opt-in experiment; configure before Serve.
 	Padding bool
+	// AdaptivePadding enables continuous bounded frame padding (adaptive-v1).
+	// Mutually exclusive with Padding; configure before Serve.
+	AdaptivePadding bool
 	// FallbackAttemptTimeout applies only with multiple configured endpoints.
 	// Zero uses five seconds; ConnectTimeout bounds all attempts together.
 	FallbackAttemptTimeout time.Duration
@@ -356,9 +359,13 @@ func (c *Client) handleContext(ctx context.Context, conn net.Conn) {
 	resp := stream.response
 	var upload io.Writer = writer
 	var download io.Reader = resp.Body
-	if c.Padding {
+	switch c.paddingMode() {
+	case paddingVersion:
 		upload = newPaddingWriter(writer)
 		download = newPaddingReader(resp.Body)
+	case adaptivePaddingVersion:
+		upload = newAdaptivePaddingWriter(writer)
+		download = newAdaptivePaddingReader(resp.Body)
 	}
 	if err := socks5Reply(conn, 0x00); err != nil {
 		return
