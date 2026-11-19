@@ -79,11 +79,11 @@ func TestAdaptivePaddingSmallWritesAndHalfClose(t *testing.T) {
 
 func TestAdaptivePaddingMalformedAndTruncated(t *testing.T) {
 	for _, frame := range [][]byte{
-		{0, 0, 0}, // Zero payload is not a record.
-		{0x40, 0x01, 0}, // Over 16 KiB.
-		{0, 1, 26, 'x'}, // For one payload byte, max pad is 24.
+		{0, 0, 0},           // Zero payload is not a record.
+		{0x40, 0x01, 0},     // Over 16 KiB.
+		{0, 1, 26, 'x'},     // For one payload byte, max pad is 24.
 		{0, 3, 0, 'a', 'b'}, // Incomplete payload.
-		{0, 1}, // Incomplete header.
+		{0, 1},              // Incomplete header.
 	} {
 		if _, err := io.ReadAll(newAdaptivePaddingReader(bytes.NewReader(frame))); err == nil {
 			t.Fatalf("accepted malformed frame %x", frame)
