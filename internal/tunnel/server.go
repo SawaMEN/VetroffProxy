@@ -44,6 +44,8 @@ type Server struct {
 	DialTimeout time.Duration
 	// Padding enables support for explicitly negotiated initial-v1 records.
 	Padding bool
+	// AdaptivePadding enables the optional adaptive-v1 framed CONNECT mode.
+	AdaptivePadding bool
 	// MaxTunnels bounds authenticated dialing/relay work across this Server.
 	// Zero uses 256. Configure before serving and do not copy Server after use.
 	MaxTunnels int
@@ -124,8 +126,9 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		s.cover(w, r)
 		return
 	}
-	padded, err := paddingRequested(r.Header)
-	if err != nil || (padded && !s.Padding) {
+	paddingMode, err := paddingModeRequested(r.Header)
+	if err != nil || (paddingMode == paddingVersion && !s.Padding) ||
+		(paddingMode == adaptivePaddingVersion && !s.AdaptivePadding) {
 		http.Error(w, "unsupported padding mode", http.StatusBadRequest)
 		return
 	}
@@ -156,8 +159,8 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	defer stopClose()
 
 	// HTTP/2 and HTTP/3 allow reading the request while streaming a response.
-	if padded {
-		w.Header().Set(paddingHeader, paddingVersion)
+	if paddingMode != "" {
+		w.Header().Set(paddingHeader, paddingMode)
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.WriteHeader(http.StatusOK)
@@ -169,9 +172,13 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var incoming io.Reader = r.Body
 	var outgoing io.Writer = flushingWriter{w: w, flusher: f}
-	if padded {
+	switch paddingMode {
+	case paddingVersion:
 		incoming = newPaddingReader(r.Body)
 		outgoing = newPaddingWriter(outgoing)
+	case adaptivePaddingVersion:
+		incoming = newAdaptivePaddingReader(r.Body)
+		outgoing = newAdaptivePaddingWriter(outgoing)
 	}
 	incomingDone := make(chan struct{})
 	go func() {
