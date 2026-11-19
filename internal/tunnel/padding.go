@@ -13,6 +13,7 @@ import (
 const (
 	paddingHeader         = "X-Vetroff-Padding"
 	paddingVersion        = "initial-v1"
+	adaptivePaddingVersion = "adaptive-v1"
 	initialPaddingRecords = 8
 	maxPaddingPayload     = 16 << 10
 	maxPaddingBytes       = 255
@@ -32,6 +33,44 @@ func paddingRequested(header http.Header) (bool, error) {
 	return true, nil
 }
 
+// paddingModeRequested refuses duplicates, unknown modes and mixed-case header aliases.
+// Mode selection is authenticated by the HTTPS transport and must be echoed.
+func paddingModeRequested(h http.Header) (string, error) {
+	mode, present, valid := protocolValue(h, paddingHeader)
+	if !valid {
+		return "", errors.New(i18n.Text("unsupported padding mode"))
+	}
+	if !present {
+		return "", nil
+	}
+	if mode != paddingVersion && mode != adaptivePaddingVersion {
+		return "", errors.New(i18n.Text("unsupported padding mode"))
+	}
+	return mode, nil
+}
+
+func (c *Client) paddingMode() string {
+	if c.AdaptivePadding {
+		return adaptivePaddingVersion
+	}
+	if c.Padding {
+		return paddingVersion
+	}
+	return ""
+}
+
+func adaptivePaddingLimit(payloadLength int) int {
+	return min(maxPaddingBytes, 24+payloadLength/8)
+}
+
+func newAdaptivePaddingWriter(w io.Writer) *paddingWriter {
+	return &paddingWriter{writer: w, adaptive: true}
+}
+
+func newAdaptivePaddingReader(r io.Reader) *paddingReader {
+	return &paddingReader{reader: r, adaptive: true}
+}
+
 var paddingBuffers = sync.Pool{New: func() any { return new([paddingBufferSize]byte) }}
 
 // paddingWriter frames only the first eight records in one direction, then
@@ -39,8 +78,9 @@ var paddingBuffers = sync.Pool{New: func() any { return new([paddingBufferSize]b
 // A failed write is terminal: retrying a partially emitted frame is unsafe.
 type paddingWriter struct {
 	writer  io.Writer
-	records int
-	err     error
+	records  int
+	adaptive bool
+	err      error
 }
 
 func newPaddingWriter(w io.Writer) *paddingWriter {
@@ -54,21 +94,26 @@ func (w *paddingWriter) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	if w.records == 0 {
+	if w.records == 0 && !w.adaptive {
 		return w.writeRaw(p)
 	}
 	buffer := paddingBuffers.Get().(*[paddingBufferSize]byte)
 	defer paddingBuffers.Put(buffer)
 	total := 0
-	for len(p) > 0 && w.records > 0 {
+	for len(p) > 0 && (w.records > 0 || w.adaptive) {
 		// One random byte gives a uniform padding length in [0,255], with no PRNG
 		// seed to fingerprint. Randomness failure aborts rather than weakening mode.
 		if _, err := io.ReadFull(rand.Reader, buffer[2:3]); err != nil {
 			w.err = err
 			return total, err
 		}
-		pad := int(buffer[2])
 		n := min(len(p), maxPaddingPayload)
+		pad := int(buffer[2])
+		if w.adaptive {
+			// Limit added traffic for large records; no unnecessary delays.
+			pad %= adaptivePaddingLimit(n) + 1
+			buffer[2] = byte(pad)
+		}
 		binary.BigEndian.PutUint16(buffer[:2], uint16(n))
 		copy(buffer[3:3+n], p[:n])
 		// A pooled buffer can contain another stream's plaintext. Never transmit it
@@ -80,7 +125,9 @@ func (w *paddingWriter) Write(p []byte) (int, error) {
 		}
 		total += n
 		p = p[n:]
-		w.records--
+		if !w.adaptive {
+			w.records--
+		}
 	}
 	if len(p) > 0 {
 		n, err := w.writeRaw(p)
@@ -122,8 +169,9 @@ func writePaddingFrame(w io.Writer, p []byte) error {
 // error, including missing padding bytes. No padding-only records are accepted.
 type paddingReader struct {
 	reader  io.Reader
-	records int
-	buffer  []byte
+	records  int
+	adaptive bool
+	buffer   []byte
 	pending []byte
 	err     error
 }
@@ -144,7 +192,7 @@ func (r *paddingReader) Read(p []byte) (int, error) {
 	if r.err != nil {
 		return 0, r.err
 	}
-	if r.records == 0 {
+	if r.records == 0 && !r.adaptive {
 		r.buffer = nil
 		return r.reader.Read(p)
 	}
@@ -156,7 +204,7 @@ func (r *paddingReader) Read(p []byte) (int, error) {
 	}
 	n := int(binary.BigEndian.Uint16(header[:2]))
 	pad := int(header[2])
-	if n == 0 || n > maxPaddingPayload {
+	if n == 0 || n > maxPaddingPayload || (r.adaptive && pad > adaptivePaddingLimit(n)) {
 		r.err = errors.New(i18n.Text("invalid padding record length"))
 		r.buffer = nil
 		return 0, r.err
@@ -173,7 +221,9 @@ func (r *paddingReader) Read(p []byte) (int, error) {
 		return 0, err
 	}
 	r.pending = r.buffer[:n]
-	r.records--
+	if !r.adaptive {
+		r.records--
+	}
 	count := copy(p, r.pending)
 	r.pending = r.pending[count:]
 	r.releaseConsumedBuffer()
@@ -183,7 +233,7 @@ func (r *paddingReader) Read(p []byte) (int, error) {
 func (r *paddingReader) releaseConsumedBuffer() {
 	if len(r.pending) == 0 {
 		r.pending = nil
-		if r.records == 0 {
+		if r.records == 0 && !r.adaptive {
 			r.buffer = nil
 		}
 	}
