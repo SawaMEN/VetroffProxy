@@ -9,6 +9,25 @@ import (
 	"testing"
 )
 
+func TestSecurityModesDoNotDowngrade(t *testing.T) {
+	base := Config{Version: 1, Servers: []string{"https://a.example"}, Username: "alice", Password: "secret"}
+	base.Security = "tls"
+	link, err := Encode(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := Decode(link)
+	if err != nil || parsed.Security != "" {
+		t.Fatal("explicit TLS did not preserve canonical legacy profile", err)
+	}
+	for _, name := range []string{"reality", "faketls", "none", "TLS"} {
+		base.Security = name
+		if _, err := Encode(base); err == nil {
+			t.Fatalf("unavailable security %q silently accepted", name)
+		}
+	}
+}
+
 func TestRoundTrip(t *testing.T) {
 	input := Config{Version: 1, Servers: []string{"https://a.example", "https://[2001:db8::1]:8443"}, Username: "пользователь", Password: "p:@/?#%🔑", TLSBackend: "nss", Bond: true, Pipeline: "8", ConnectTimeout: "12s", AttemptTimeout: "2s"}
 	link, err := Encode(input)

@@ -17,6 +17,7 @@ import (
 	"github.com/SawaMEN/VetroffProxy/internal/cluster"
 	"github.com/SawaMEN/VetroffProxy/internal/contract"
 	"github.com/SawaMEN/VetroffProxy/internal/i18n"
+	"github.com/SawaMEN/VetroffProxy/internal/securitymode"
 	"github.com/SawaMEN/VetroffProxy/internal/tlsidentity"
 	"github.com/SawaMEN/VetroffProxy/internal/xhttp"
 )
@@ -37,6 +38,7 @@ type Config struct {
 	SNI            string                  `json:"sni,omitempty"`
 	PinSHA256      string                  `json:"pin_sha256,omitempty"`
 	Encryption     string                  `json:"encryption,omitempty"`
+	Security       string                  `json:"security,omitempty"`
 	Balance        string                  `json:"balance,omitempty"`
 	Bond           bool                    `json:"bond,omitempty"`
 	Discover       bool                    `json:"discover,omitempty"`
@@ -99,8 +101,11 @@ func (c *Config) normalize() error {
 	if c.Encryption == "" {
 		c.Encryption = "tls13"
 	}
-	if c.Encryption != "tls13" {
+	if c.Encryption != "tls13" || securitymode.Validate(c.Security) != nil {
 		return invalid()
+	}
+	if c.Security == securitymode.TLS {
+		c.Security = "" // Preserve canonical legacy TLS links.
 	}
 	if (c.Transport == "h3-post" || c.Transport == "h3-connect") && c.TLSBackend == "nss" {
 		return invalid()
@@ -192,7 +197,7 @@ func uniqueFields(data []byte) bool {
 		return false
 	}
 	seen := make(map[string]bool)
-	allowed := map[string]bool{"v": true, "servers": true, "username": true, "password": true, "tls": true, "transport": true, "xhttp_path": true, "xhttp_host": true, "sni": true, "pin_sha256": true, "encryption": true, "balance": true, "bond": true, "discover": true, "pipeline": true, "padding": true, "connect_timeout": true, "attempt_timeout": true}
+	allowed := map[string]bool{"v": true, "servers": true, "username": true, "password": true, "tls": true, "transport": true, "xhttp_path": true, "xhttp_host": true, "sni": true, "pin_sha256": true, "encryption": true, "security": true, "balance": true, "bond": true, "discover": true, "pipeline": true, "padding": true, "connect_timeout": true, "attempt_timeout": true}
 	allowed["protocol_policy"] = true
 	for decoder.More() {
 		token, err := decoder.Token()

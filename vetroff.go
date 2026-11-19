@@ -19,6 +19,7 @@ import (
 	"github.com/SawaMEN/VetroffProxy/internal/h2profile"
 	"github.com/SawaMEN/VetroffProxy/internal/nodeperf"
 	"github.com/SawaMEN/VetroffProxy/internal/nsstls"
+	"github.com/SawaMEN/VetroffProxy/internal/securitymode"
 	"github.com/SawaMEN/VetroffProxy/internal/transportengine"
 	"github.com/SawaMEN/VetroffProxy/internal/tunnel"
 	"github.com/SawaMEN/VetroffProxy/internal/xhttp"
@@ -52,6 +53,7 @@ type ClientConfig struct {
 	ServerURL            string
 	Credentials          Credentials
 	CACertFile           string
+	Security             string // Empty/tls: verified TLS 1.3; unsupported modes fail closed.
 	Engine               string // Empty/builtin preserves old selection; auto may fall back; mozilla selects NSS/Neqo; necko and firefox require native Gecko.
 	TLSBackend           string // Empty selects auto (NSS for TCP if available, Go for default H3); Neqo uses NSS.
 	Transport            string // Empty selects h2-connect.
@@ -92,6 +94,9 @@ type Client struct {
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
+	if err := securitymode.Validate(config.Security); err != nil {
+		return nil, err
+	}
 	if config.MaxConnections < 0 || config.ConnectTimeout < 0 || config.FallbackAttemptTimeout < 0 {
 		return nil, errors.New("negative client limit or timeout")
 	}

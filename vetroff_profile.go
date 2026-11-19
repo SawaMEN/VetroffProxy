@@ -36,6 +36,7 @@ func ClientConfigFromLink(link string) (ClientConfig, error) {
         FallbackServers:            append([]string(nil), imported.Servers[1:]...),
         Credentials:                Credentials{Username: imported.Username, Password: imported.Password},
         TLSBackend:                 imported.TLSBackend,
+        Security:                   imported.Security,
         Transport:                  imported.Transport,
         ServerName:                 imported.SNI,
         SPKIPin:                    imported.PinSHA256,

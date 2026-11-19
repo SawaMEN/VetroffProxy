@@ -21,6 +21,7 @@ import (
 	"github.com/SawaMEN/VetroffProxy/internal/egress"
 	"github.com/SawaMEN/VetroffProxy/internal/profile"
 	"github.com/SawaMEN/VetroffProxy/internal/safejson"
+	"github.com/SawaMEN/VetroffProxy/internal/securitymode"
 	"github.com/SawaMEN/VetroffProxy/internal/tlsidentity"
 	"github.com/SawaMEN/VetroffProxy/internal/xhttp"
 )
@@ -39,6 +40,7 @@ type ServerConfig struct {
 	Listen         string                  `json:"listen"`
 	Certificate    string                  `json:"cert"`
 	PrivateKey     string                  `json:"key"`
+	Security       string                  `json:"security,omitempty"`
 	Username       string                  `json:"username"`
 	Password       string                  `json:"password"`
 	WebRoot        string                  `json:"web_root,omitempty"`
@@ -54,7 +56,7 @@ type ServerConfig struct {
 type Options struct {
 	ProtocolPolicy                                                                                  contract.ProtocolPolicy
 	Server, Certificate, PrivateKey, Output, SNI, CACertFile, JoinLinkFile, UpstreamCAFile, WebRoot string
-	TLSBackend, Transport, XHTTPPath, XHTTPHost                                                     string
+	TLSBackend, Transport, XHTTPPath, XHTTPHost, Security                                           string
 	EnableUDP                                                                                       bool
 }
 
@@ -75,7 +77,7 @@ func ReadServer(path string) (ServerConfig, error) {
 		return c, ErrConfig
 	}
 	defer f.Close()
-	if safejson.Decode(f, 32<<10, &c) != nil || c.Version != 1 || c.Certificate == "" || c.PrivateKey == "" || !validCredentials(c) || c.MaxTunnels < 1 || c.MaxTunnels > 65536 || c.MaxConnections < 1 || c.MaxConnections > 65536 {
+	if safejson.Decode(f, 32<<10, &c) != nil || securitymode.Validate(c.Security) != nil || c.Version != 1 || c.Certificate == "" || c.PrivateKey == "" || !validCredentials(c) || c.MaxTunnels < 1 || c.MaxTunnels > 65536 || c.MaxConnections < 1 || c.MaxConnections > 65536 {
 		return ServerConfig{}, ErrConfig
 	}
 	if _, err := egress.New(c.EgressProxy, c.EgressDNS); err != nil {
@@ -114,6 +116,9 @@ func ReadServer(path string) (ServerConfig, error) {
 }
 
 func Generate(o Options) error {
+	if err := securitymode.Validate(o.Security); err != nil {
+		return err
+	}
 	if o.ProtocolPolicy.Validate() != nil || o.ProtocolPolicy == contract.ProtocolStrict && o.JoinLinkFile != "" {
 		return ErrSetup
 	}
@@ -189,14 +194,14 @@ func Generate(o Options) error {
 		port = "443"
 	}
 	listen := net.JoinHostPort("", port)
-	config := ServerConfig{EnableUDP: o.EnableUDP, Version: 1, Listen: listen, Certificate: certPath, PrivateKey: keyPath, Username: "vetroff", MaxTunnels: 256, MaxConnections: 512}
+	config := ServerConfig{EnableUDP: o.EnableUDP, Security: o.Security, Version: 1, Listen: listen, Certificate: certPath, PrivateKey: keyPath, Username: "vetroff", MaxTunnels: 256, MaxConnections: 512}
 	config.ProtocolPolicy = o.ProtocolPolicy
 	var secret [32]byte
 	if _, err := rand.Read(secret[:]); err != nil {
 		return ErrSetup
 	}
 	config.Password = base64.RawURLEncoding.EncodeToString(secret[:])
-	linkConfig := profile.Config{Version: 1, Servers: []string{u.String()}, Username: config.Username, Password: config.Password, SNI: policy.SNI, PinSHA256: policy.PinSHA256, Encryption: "tls13", TLSBackend: o.TLSBackend, Transport: o.Transport, XHTTPPath: o.XHTTPPath, XHTTPHost: o.XHTTPHost, Bond: true, Discover: true}
+	linkConfig := profile.Config{Version: 1, Servers: []string{u.String()}, Username: config.Username, Password: config.Password, SNI: policy.SNI, PinSHA256: policy.PinSHA256, Encryption: "tls13", Security: o.Security, TLSBackend: o.TLSBackend, Transport: o.Transport, XHTTPPath: o.XHTTPPath, XHTTPHost: o.XHTTPHost, Bond: true, Discover: true}
 	linkConfig.ProtocolPolicy = o.ProtocolPolicy
 	if o.ProtocolPolicy == contract.ProtocolStrict {
 		linkConfig.Bond, linkConfig.Discover = false, false

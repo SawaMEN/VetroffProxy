@@ -35,7 +35,7 @@ func TestClientConfigFromLinkPreservesTransportAndSecrets(t *testing.T) {
     if parsed.ServerURL != "https://edge.example.com" || len(parsed.FallbackServers) != 1 ||
         parsed.FallbackServers[0] != "https://backup.example.com" ||
         parsed.Credentials.Password != "private-credential" ||
-        parsed.Transport != "xhttp-stream-one" || parsed.XHTTPPath != "/secret-path" ||
+        parsed.Transport != "xhttp-stream-one" || parsed.XHTTPPath != "/secret-path/" ||
         parsed.XHTTPHost != "site.example.com" || parsed.Balance != "round-robin" ||
         !parsed.EnableUDP || !parsed.UDPStreaming || parsed.ConnectTimeout != 16*time.Second ||
         parsed.FallbackAttemptTimeout != 4*time.Second {

@@ -54,7 +54,7 @@ func checkConfigCommand(args []string, out io.Writer) error {
 	server := fs.String("config", "", "private server JSON file")
 	link := fs.String("link-file", "", "private client profile file (stdin is not supported)")
 	ca := fs.String("ca-cert", "", "additional client trusted certificate PEM")
-	engine := fs.String("engine", "builtin", "client engine: builtin or mozilla")
+	engine := fs.String("engine", "builtin", "client engine: builtin, auto, mozilla, necko or firefox")
 	jsonOutput := fs.Bool("json", false, "print a schema-1 JSON report")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -205,6 +205,7 @@ func checkServerConfig(path string, r *configReport) {
 	if r.OK {
 		r.Settings = map[string]any{"h3": c.H3Listen != "", "udp": c.EnableUDP, "managed_users": c.UsersFile != "", "cascade": c.EgressProxy != "", "bond_hub": c.BondHub, "bond_relay": c.BondUpstream != "", "max_tunnels": c.MaxTunnels, "max_connections": c.MaxConnections}
 		r.Settings["protocol_policy"] = c.ProtocolPolicy.Effective()
+		r.Settings["security"] = "tls"
 	}
 }
 
@@ -253,5 +254,6 @@ func checkClientConfig(path, ca, engine string, r *configReport) {
 		status := client.TransportStatus()
 		r.Settings = map[string]any{"engine": status.Engine, "transport": status.Transport, "tls_backend": status.TLSBackend, "quic_backend": status.QUICBackend, "servers": len(c.Servers), "bond": c.Bond, "discover": c.Discover, "padding": c.Padding, "balance": c.Balance, "connect_timeout": c.ConnectTimeout, "attempt_timeout": c.AttemptTimeout, "nss_available": buildinfo.NSSAvailable}
 		r.Settings["protocol_policy"] = c.ProtocolPolicy.Effective()
+		r.Settings["security"] = "tls"
 	}
 }
