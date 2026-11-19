@@ -66,7 +66,7 @@ func TestClientConfigFromLinkNeverLeaksSecretsOnFailure(t *testing.T) {
 
 
 func TestSDKSecurityModeFailClosed(t *testing.T) {
-	for _, mode := range []string{"reality", "faketls", "none"} {
+	for _, mode := range []string{"shadowtls-v3", "none", "TLS"} {
 		if _, err := vetroff.NewClient(vetroff.ClientConfig{Security: mode}); err == nil {
 			t.Errorf("unsupported %q must fail before network setup", mode)
 		}

@@ -289,7 +289,7 @@ func TestServerCascadeConfiguration(t *testing.T) {
 
 
 func TestSetupSecurityModeFailClosed(t *testing.T) {
-	for _, mode := range []string{"reality", "faketls", "none"} {
+	for _, mode := range []string{"shadowtls-v3", "none", "tls12"} {
 		t.Run(mode, func(t *testing.T) {
 			o := fixture(t, "secure.example")
 			o.Security = mode
@@ -314,7 +314,7 @@ func TestSetupSecurityModeFailClosed(t *testing.T) {
 	if err != nil || link.Security != "" {
 		t.Fatalf("TLS link failed canonical normalization: %+v %v", link, err)
 	}
-	server.Security = "reality"
+	server.Security = "shadowtls-v3"
 	raw, err := json.Marshal(server)
 	if err != nil { t.Fatal(err) }
 	if err := os.WriteFile(filepath.Join(o.Output, "server.json"), raw, 0600); err != nil { t.Fatal(err) }

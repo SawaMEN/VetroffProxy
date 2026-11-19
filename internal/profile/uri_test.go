@@ -20,7 +20,7 @@ func TestSecurityModesDoNotDowngrade(t *testing.T) {
 	if err != nil || parsed.Security != "" {
 		t.Fatal("explicit TLS did not preserve canonical legacy profile", err)
 	}
-	for _, name := range []string{"reality", "faketls", "none", "TLS"} {
+	for _, name := range []string{"shadowtls-v3", "none", "TLS"} {
 		base.Security = name
 		if _, err := Encode(base); err == nil {
 			t.Fatalf("unavailable security %q silently accepted", name)
