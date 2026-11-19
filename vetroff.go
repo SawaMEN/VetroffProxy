@@ -99,7 +99,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 	if config.MaxConnections < 0 || config.ConnectTimeout < 0 || config.FallbackAttemptTimeout < 0 {
 		return nil, errors.New("negative client limit or timeout")
 	}
-	if config.BondDiscover && !config.Bond || config.Bond && config.EnableUDP ||
+	if config.BondDiscover && !config.Bond || config.Bond && (config.EnableUDP || config.Padding || config.AdaptivePadding) ||
 		(config.BondPipeline != 0 && config.BondPipeline != 4 && config.BondPipeline != 8) {
 		return nil, errors.New("invalid bond or UDP combination")
 	}
