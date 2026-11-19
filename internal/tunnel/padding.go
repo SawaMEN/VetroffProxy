@@ -11,13 +11,13 @@ import (
 )
 
 const (
-	paddingHeader         = "X-Vetroff-Padding"
-	paddingVersion        = "initial-v1"
+	paddingHeader          = "X-Vetroff-Padding"
+	paddingVersion         = "initial-v1"
 	adaptivePaddingVersion = "adaptive-v1"
-	initialPaddingRecords = 8
-	maxPaddingPayload     = 16 << 10
-	maxPaddingBytes       = 255
-	paddingBufferSize     = 3 + maxPaddingPayload + maxPaddingBytes
+	initialPaddingRecords  = 8
+	maxPaddingPayload      = 16 << 10
+	maxPaddingBytes        = 255
+	paddingBufferSize      = 3 + maxPaddingPayload + maxPaddingBytes
 )
 
 // Negotiation is inside authenticated HTTPS. This is Vetroff's own versioned
@@ -77,7 +77,7 @@ var paddingBuffers = sync.Pool{New: func() any { return new([paddingBufferSize]b
 // passes bytes through unchanged. It has one writer, just like the H2 stream.
 // A failed write is terminal: retrying a partially emitted frame is unsafe.
 type paddingWriter struct {
-	writer  io.Writer
+	writer   io.Writer
 	records  int
 	adaptive bool
 	err      error
@@ -168,12 +168,12 @@ func writePaddingFrame(w io.Writer, p []byte) error {
 // EOF at a record boundary is a normal half-close; EOF inside any record is an
 // error, including missing padding bytes. No padding-only records are accepted.
 type paddingReader struct {
-	reader  io.Reader
+	reader   io.Reader
 	records  int
 	adaptive bool
 	buffer   []byte
-	pending []byte
-	err     error
+	pending  []byte
+	err      error
 }
 
 func newPaddingReader(r io.Reader) *paddingReader {
