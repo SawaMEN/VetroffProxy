@@ -73,8 +73,8 @@ func newAdaptivePaddingReader(r io.Reader) *paddingReader {
 
 var paddingBuffers = sync.Pool{New: func() any { return new([paddingBufferSize]byte) }}
 
-// paddingWriter frames only the first eight records in one direction, then
-// passes bytes through unchanged. It has one writer, just like the H2 stream.
+// paddingWriter frames the first eight records in initial-v1 and every record
+// in adaptive-v1. It has one writer, just like the H2 stream.
 // A failed write is terminal: retrying a partially emitted frame is unsafe.
 type paddingWriter struct {
 	writer   io.Writer
@@ -101,8 +101,8 @@ func (w *paddingWriter) Write(p []byte) (int, error) {
 	defer paddingBuffers.Put(buffer)
 	total := 0
 	for len(p) > 0 && (w.records > 0 || w.adaptive) {
-		// One random byte gives a uniform padding length in [0,255], with no PRNG
-		// seed to fingerprint. Randomness failure aborts rather than weakening mode.
+		// One random byte selects a padding length, without a persistent PRNG
+		// seed. Randomness failure aborts rather than weakening the mode.
 		if _, err := io.ReadFull(rand.Reader, buffer[2:3]); err != nil {
 			w.err = err
 			return total, err
