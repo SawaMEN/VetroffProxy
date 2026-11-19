@@ -36,6 +36,7 @@ type ServerConfig struct {
 	Version        int                     `json:"v"`
 	H3Listen       string                  `json:"h3_listen,omitempty"`
 	EnableUDP      bool                    `json:"enable_udp,omitempty"`
+	AdaptivePadding bool                 `json:"adaptive_padding,omitempty"`
 	Listen         string                  `json:"listen"`
 	Certificate    string                  `json:"cert"`
 	PrivateKey     string                  `json:"key"`
@@ -55,7 +56,7 @@ type Options struct {
 	ProtocolPolicy                                                                                  contract.ProtocolPolicy
 	Server, Certificate, PrivateKey, Output, SNI, CACertFile, JoinLinkFile, UpstreamCAFile, WebRoot string
 	TLSBackend, Transport, XHTTPPath, XHTTPHost                                                     string
-	EnableUDP                                                                                       bool
+	EnableUDP, AdaptivePadding                                                                      bool
 }
 
 var ErrConfig = errors.New("invalid server configuration")
@@ -114,7 +115,7 @@ func ReadServer(path string) (ServerConfig, error) {
 }
 
 func Generate(o Options) error {
-	if o.ProtocolPolicy.Validate() != nil || o.ProtocolPolicy == contract.ProtocolStrict && o.JoinLinkFile != "" {
+	if o.ProtocolPolicy.Validate() != nil || o.ProtocolPolicy == contract.ProtocolStrict && o.JoinLinkFile != "" || o.AdaptivePadding && o.ProtocolPolicy != contract.ProtocolStrict {
 		return ErrSetup
 	}
 	if o.ProtocolPolicy == contract.ProtocolDirect {
@@ -189,14 +190,14 @@ func Generate(o Options) error {
 		port = "443"
 	}
 	listen := net.JoinHostPort("", port)
-	config := ServerConfig{EnableUDP: o.EnableUDP, Version: 1, Listen: listen, Certificate: certPath, PrivateKey: keyPath, Username: "vetroff", MaxTunnels: 256, MaxConnections: 512}
+	config := ServerConfig{EnableUDP: o.EnableUDP, AdaptivePadding: o.AdaptivePadding, Version: 1, Listen: listen, Certificate: certPath, PrivateKey: keyPath, Username: "vetroff", MaxTunnels: 256, MaxConnections: 512}
 	config.ProtocolPolicy = o.ProtocolPolicy
 	var secret [32]byte
 	if _, err := rand.Read(secret[:]); err != nil {
 		return ErrSetup
 	}
 	config.Password = base64.RawURLEncoding.EncodeToString(secret[:])
-	linkConfig := profile.Config{Version: 1, Servers: []string{u.String()}, Username: config.Username, Password: config.Password, SNI: policy.SNI, PinSHA256: policy.PinSHA256, Encryption: "tls13", TLSBackend: o.TLSBackend, Transport: o.Transport, XHTTPPath: o.XHTTPPath, XHTTPHost: o.XHTTPHost, Bond: true, Discover: true}
+	linkConfig := profile.Config{Version: 1, Servers: []string{u.String()}, Username: config.Username, Password: config.Password, SNI: policy.SNI, PinSHA256: policy.PinSHA256, Encryption: "tls13", TLSBackend: o.TLSBackend, Transport: o.Transport, XHTTPPath: o.XHTTPPath, XHTTPHost: o.XHTTPHost, Bond: true, Discover: true, AdaptivePadding: o.AdaptivePadding}
 	linkConfig.ProtocolPolicy = o.ProtocolPolicy
 	if o.ProtocolPolicy == contract.ProtocolStrict {
 		linkConfig.Bond, linkConfig.Discover = false, false
