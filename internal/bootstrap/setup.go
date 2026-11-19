@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -56,7 +57,7 @@ type ServerConfig struct {
 type Options struct {
 	ProtocolPolicy                                                                                  contract.ProtocolPolicy
 	Server, Certificate, PrivateKey, Output, SNI, CACertFile, JoinLinkFile, UpstreamCAFile, WebRoot string
-	TLSBackend, Transport, XHTTPPath, XHTTPHost, Security                                           string
+	TLSBackend, Transport, XHTTPPath, XHTTPHost, Security, Listen                                   string
 	EnableUDP                                                                                       bool
 }
 
@@ -194,6 +195,17 @@ func Generate(o Options) error {
 		port = "443"
 	}
 	listen := net.JoinHostPort("", port)
+	if o.Listen != "" {
+		host, innerPort, err := net.SplitHostPort(o.Listen)
+		if err != nil {
+			return ErrSetup
+		}
+		n, err := strconv.Atoi(innerPort)
+		if err != nil || n <= 0 || n > 65535 {
+			return ErrSetup
+		}
+		listen = net.JoinHostPort(host, strconv.Itoa(n))
+	}
 	config := ServerConfig{EnableUDP: o.EnableUDP, Security: o.Security, Version: 1, Listen: listen, Certificate: certPath, PrivateKey: keyPath, Username: "vetroff", MaxTunnels: 256, MaxConnections: 512}
 	config.ProtocolPolicy = o.ProtocolPolicy
 	var secret [32]byte

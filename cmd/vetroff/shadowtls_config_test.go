@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/SawaMEN/VetroffProxy/internal/bootstrap"
 	"github.com/SawaMEN/VetroffProxy/internal/profile"
 )
 
@@ -120,7 +119,6 @@ func TestShadowTLSV3RejectsUnsafeConfigurations(t *testing.T) {
 			if err := shadowTLSConfigCommand(test.args, &bytes.Buffer{}); err == nil { t.Fatal("unsafe config accepted") }
 		})
 	}
-	_ = bootstrap.ServerConfig{}
 }
 
 func TestShadowTLSV3RejectsUDPOnlyProfile(t *testing.T) {

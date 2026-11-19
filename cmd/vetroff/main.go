@@ -48,6 +48,11 @@ func main() {
 			log.Fatal(err)
 		}
 		return
+	case "shadowtls-config":
+		if err := shadowTLSConfigCommand(os.Args[2:], os.Stdout); err != nil {
+			log.Fatal(err)
+		}
+		return
 	case "check-config":
 		if err := checkConfigCommand(os.Args[2:], os.Stdout); err != nil {
 			log.Fatal(err)
@@ -80,7 +85,8 @@ func main() {
 		cert := fs.String("cert", "", i18n.Text("TLS certificate PEM"))
 		key := fs.String("key", "", i18n.Text("TLS private key PEM"))
 		out := fs.String("out", "vetroff-config", i18n.Text("new private configuration directory (must not exist)"))
-		security := fs.String("security", "tls", "security carrier: tls (REALITY and FakeTLS require separate implementations)")
+		innerListen := fs.String("listen", "", "optional Vetroff server listening address (use loopback for ShadowTLS v3 bridge)")
+		security := fs.String("security", "tls", "inner security: tls (ShadowTLS v3 outer carrier uses shadowtls-config)")
 		transport := fs.String("transport", "h2-connect", i18n.Text("native transport: h2-connect, h2-post, h3-post, h3-connect, wss, xhttp-stream-one, xhttp-stream-up or xhttp-packet-up (no external proxy)"))
 		backend := fs.String("tls-backend", "auto", i18n.Text("TLS backend: auto (NSS for TCP on tagged Linux, Go for H3), go, or nss"))
 		sni := fs.String("sni", "", i18n.Text("verified TLS server name (default: URL hostname)"))
@@ -94,7 +100,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		if err := bootstrap.Generate(bootstrap.Options{ProtocolPolicy: wirePolicy, Server: *server, Certificate: *cert, PrivateKey: *key, Output: *out, SNI: *sni, CACertFile: *ca, JoinLinkFile: *join, UpstreamCAFile: *upstreamCA, WebRoot: *web, Security: *security, TLSBackend: *backend, Transport: *transport, XHTTPPath: *xhttpPath, XHTTPHost: *xhttpHost, EnableUDP: *enableUDP}); err != nil {
+		if err := bootstrap.Generate(bootstrap.Options{ProtocolPolicy: wirePolicy, Server: *server, Certificate: *cert, PrivateKey: *key, Output: *out, SNI: *sni, CACertFile: *ca, JoinLinkFile: *join, UpstreamCAFile: *upstreamCA, WebRoot: *web, Security: *security, TLSBackend: *backend, Transport: *transport, XHTTPPath: *xhttpPath, XHTTPHost: *xhttpHost, EnableUDP: *enableUDP, Listen: *innerListen}); err != nil {
 			log.Fatal(i18n.Text(err.Error()))
 		}
 		fmt.Println(i18n.Text("configuration created: server.json, connection.txt and node.json (secrets not printed)"))
@@ -325,7 +331,7 @@ func main() {
 			fs.BoolVar(udpStream, "udp-stream", false, i18n.Text("opt in to persistent multiplexed UDP stream v2 (requires --enable-udp)"))
 			fs.BoolVar(udpMultiNode, "udp-multi-node", false, i18n.Text("opt in to per-destination UDP v2 stream sharding across explicit trusted servers"))
 		}
-		security := fs.String("security", "tls", "security carrier: tls (REALITY and FakeTLS are unavailable)")
+		security := fs.String("security", "tls", "inner security: tls (ShadowTLS v3 outer carrier uses shadowtls-config)")
 		listen := fs.String("listen", "127.0.0.1:1080", i18n.Text("local SOCKS5 listening address"))
 		maxConnections := fs.Int("max-connections", 256, i18n.Text("maximum local SOCKS sockets including incomplete handshakes"))
 		server := fs.String("server", "", i18n.Text("remote HTTPS proxy URL"))
@@ -735,7 +741,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, i18n.Text("usage: vetroff <version|setup|server|client|share|cluster-add|access|check-config|doctor> [flags] (credentials: environment or vetroff link)"))
+	fmt.Fprintln(os.Stderr, i18n.Text("usage: vetroff <version|setup|server|client|share|cluster-add|access|check-config|shadowtls-config|doctor> [flags] (credentials: environment or vetroff link)"))
 	os.Exit(2)
 }
 
