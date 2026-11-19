@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/SawaMEN/VetroffProxy/internal/cluster"
+	"github.com/SawaMEN/VetroffProxy/internal/contract"
 	"github.com/SawaMEN/VetroffProxy/internal/profile"
 )
 
@@ -320,5 +321,23 @@ func TestSetupSecurityModeFailClosed(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(o.Output, "server.json"), raw, 0600); err != nil { t.Fatal(err) }
 	if _, err := ReadServer(filepath.Join(o.Output, "server.json")); err == nil {
 		t.Fatal("unsupported security on server was accepted")
+	}
+}
+
+func TestShadowTLSLocalBackendStrictProfile(t *testing.T) {
+	o := fixture(t, "vpn.example.org")
+	o.Listen = "127.0.0.1:8443"
+	o.Transport = "h2-post"
+	o.ProtocolPolicy = contract.ProtocolStrict
+	if err := Generate(o); err != nil {
+		t.Fatal("failed to set up isolated H2 backend", err)
+	}
+	server, err := ReadServer(filepath.Join(o.Output, "server.json"))
+	if err != nil || server.Listen != "127.0.0.1:8443" || server.BondHub || server.H3Listen != "" {
+		t.Fatalf("unsafe server listener or bond configuration: %+v %v", server, err)
+	}
+	p, err := profile.ReadSecretFile(filepath.Join(o.Output, "connection.txt"))
+	if err != nil || p.Bond || p.Discover || p.Transport != "h2-post" || p.ProtocolPolicy != contract.ProtocolStrict {
+		t.Fatalf("invalid ShadowTLS-compatible link: %+v %v", p, err)
 	}
 }
