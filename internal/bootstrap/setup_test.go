@@ -286,3 +286,39 @@ func TestServerCascadeConfiguration(t *testing.T) {
 		})
 	}
 }
+
+
+func TestSetupSecurityModeFailClosed(t *testing.T) {
+	for _, mode := range []string{"reality", "faketls", "none"} {
+		t.Run(mode, func(t *testing.T) {
+			o := fixture(t, "secure.example")
+			o.Security = mode
+			if err := Generate(o); err == nil {
+				t.Fatal("unsupported security mode accepted")
+			}
+			if _, err := os.Stat(o.Output); !os.IsNotExist(err) {
+				t.Fatal("unsupported mode created a server configuration")
+			}
+		})
+	}
+	o := fixture(t, "secure.example")
+	o.Security = "tls"
+	if err := Generate(o); err != nil {
+		t.Fatal("explicit TLS setup failed", err)
+	}
+	server, err := ReadServer(filepath.Join(o.Output, "server.json"))
+	if err != nil || server.Security != "tls" {
+		t.Fatalf("lost TLS server security: %+v %v", server, err)
+	}
+	link, err := profile.ReadSecretFile(filepath.Join(o.Output, "connection.txt"))
+	if err != nil || link.Security != "" {
+		t.Fatalf("TLS link failed canonical normalization: %+v %v", link, err)
+	}
+	server.Security = "reality"
+	raw, err := json.Marshal(server)
+	if err != nil { t.Fatal(err) }
+	if err := os.WriteFile(filepath.Join(o.Output, "server.json"), raw, 0600); err != nil { t.Fatal(err) }
+	if _, err := ReadServer(filepath.Join(o.Output, "server.json")); err == nil {
+		t.Fatal("unsupported security on server was accepted")
+	}
+}

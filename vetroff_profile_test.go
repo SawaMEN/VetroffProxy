@@ -63,3 +63,12 @@ func TestClientConfigFromLinkNeverLeaksSecretsOnFailure(t *testing.T) {
         t.Fatal("invalid share link accepted or leaked")
     }
 }
+
+
+func TestSDKSecurityModeFailClosed(t *testing.T) {
+	for _, mode := range []string{"reality", "faketls", "none"} {
+		if _, err := vetroff.NewClient(vetroff.ClientConfig{Security: mode}); err == nil {
+			t.Errorf("unsupported %q must fail before network setup", mode)
+		}
+	}
+}

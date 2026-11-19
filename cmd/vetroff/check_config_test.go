@@ -291,3 +291,18 @@ func TestCheckConfigArgumentsAndExitStatus(t *testing.T) {
 		t.Fatal("CLI help failed")
 	}
 }
+
+
+func TestCheckConfigReportsTLSMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "connection.txt")
+	link, err := profile.Encode(profile.Config{Version: 1, Security: "tls", Servers: []string{"https://unresolvable.invalid"}, Username: "test", Password: "private-password-marker", TLSBackend: "go"})
+	if err != nil { t.Fatal(err) }
+	if err := profile.WriteSecretFile(path, link); err != nil { t.Fatal(err) }
+	report, err, output := runConfigReport(t, "--link-file", path)
+	if err != nil || !report.OK || report.Settings["security"] != "tls" {
+		t.Fatalf("TLS report failed: %+v %v", report, err)
+	}
+	if strings.Contains(output, "private-password-marker") || strings.Contains(output, path) {
+		t.Fatal("config check leaked secrets")
+	}
+}
