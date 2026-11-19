@@ -57,7 +57,7 @@ func Current() Info {
 	}
 	engines := []string{"builtin"}
 	if runtime.GOOS == "linux" && (runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64") {
-		engines = append(engines, "necko")
+		engines = append(engines, "necko", "firefox")
 	}
 	if NSSAvailable {
 		engines = append(engines, "mozilla")

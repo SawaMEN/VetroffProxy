@@ -347,14 +347,14 @@ func main() {
 		balance := fs.String("balance", "failover", i18n.Text("new-stream scheduling: failover, round-robin, least-active, adaptive"))
 		attemptTimeout := fs.Duration("fallback-attempt-timeout", 5*time.Second, i18n.Text("setup time per endpoint when fallbacks are configured"))
 		padding := fs.Bool("padding", false, i18n.Text("require experimental initial-record padding (server must enable it)"))
-		neckoBundle := fs.String("necko-bundle", "", "verified Necko bundle directory (with --engine necko)")
+		neckoBundle := fs.String("necko-bundle", "", "verified Necko bundle directory (with --engine necko or firefox)")
 		engine := new(string)
 		if os.Args[1] == "client" {
 			defaultEngine := "builtin"
 			if transportengine.DefaultNeckoBundle() != "" {
 				defaultEngine = "auto"
 			}
-			fs.StringVar(engine, "engine", defaultEngine, i18n.Text("local transport engine: auto (Necko for compatible CONNECT, NSS/Neqo or Go otherwise), builtin, mozilla, necko"))
+			fs.StringVar(engine, "engine", defaultEngine, i18n.Text("local transport engine: auto (Necko when compatible, NSS/Neqo or Go otherwise), builtin, mozilla, necko, firefox (native-only)"))
 		}
 		nativeTransport := fs.String("transport", "h2-connect", i18n.Text("native transport: h2-connect, h2-post, h3-post, h3-connect, wss, xhttp-stream-one, xhttp-stream-up, xhttp-packet-up, or auto with --engine mozilla"))
 		tlsBackend := fs.String("tls-backend", "auto", i18n.Text("TLS backend: auto (NSS for TCP on tagged Linux, Go for H3), go, or nss"))
@@ -546,13 +546,13 @@ func main() {
 			H3Fallback: *h3Fallback, QUICHandshakeTimeout: *quicTimeout,
 			TLSClientProfile: *tlsProfile, HTTP2ReceiveProfile: *h2Profile,
 		}
-		if *engine == "necko" {
+		if *engine == "necko" || *engine == "firefox" {
 			explicit := map[string]bool{}
 			fs.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
 			if !explicit["quic-backend"] {
 				intent.QUICBackend = ""
 			}
-			if *neckoBundle == "" {
+			if *neckoBundle == "" && *engine == "necko" {
 				exe, e := os.Executable()
 				if e != nil {
 					failClient(e)

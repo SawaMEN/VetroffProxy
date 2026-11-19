@@ -63,3 +63,30 @@ func TestNativeProfileEngineSelection(t *testing.T) {
 		}
 	}
 }
+
+func TestFirefoxEngineRequiresNativeNecko(t *testing.T) {
+	bundle := "/nonexistent/verified-at-apply"
+	if runtime.GOOS != "linux" || (runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64") {
+		if _, err := Resolve(Config{Engine: "firefox", NeckoBundle: bundle}); err == nil {
+			t.Fatal("firefox mode must reject unsupported platforms")
+		}
+		return
+	}
+
+	for _, transport := range []string{"h2-connect", "h3-connect", "h2-post", "h3-post"} {
+		p, err := Resolve(Config{Engine: "firefox", NeckoBundle: bundle, Transport: transport})
+		if err != nil || p.Engine != "necko" || p.NeckoBundle != bundle || p.Transport != transport {
+			t.Fatalf("firefox must resolve to native Gecko without changing carrier: %+v %v", p, err)
+		}
+	}
+	for _, cfg := range []Config{
+		{Engine: "firefox", NeckoBundle: bundle, Transport: "wss"},
+		{Engine: "firefox", NeckoBundle: bundle, Transport: "h2-connect", TLSBackend: "go"},
+		{Engine: "firefox", NeckoBundle: bundle, Transport: "h3-connect", QUICBackend: "quic-go"},
+		{Engine: "firefox", NeckoBundle: bundle, Transport: "h3-connect", H3Fallback: "h2"},
+	} {
+		if p, err := Resolve(cfg); err == nil {
+			t.Fatalf("firefox accepted non-native transport or downgrade: %+v", p)
+		}
+	}
+}

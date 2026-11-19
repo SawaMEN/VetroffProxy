@@ -44,7 +44,7 @@ type NodeStatus = nodeperf.Snapshot
 
 type Credentials struct{ Username, Password string }
 type ClientConfig struct {
-	NeckoBundle string // Verified Necko distribution; Engine may be necko or auto.
+	NeckoBundle string // Verified Necko distribution; Engine may be necko, firefox or auto.
 	// RequireProtocolNegotiation opts into strict draft/capability confirmation.
 	// False preserves builtin interoperability. Configure both ends explicitly.
 	RequireProtocolNegotiation bool
@@ -52,7 +52,7 @@ type ClientConfig struct {
 	ServerURL            string
 	Credentials          Credentials
 	CACertFile           string
-	Engine               string // Empty/builtin preserves old selection; auto uses Necko when compatible, otherwise NSS/Neqo or Go; mozilla and necko force a backend.
+	Engine               string // Empty/builtin preserves old selection; auto may fall back; mozilla selects NSS/Neqo; necko and firefox require native Gecko.
 	TLSBackend           string // Empty selects auto (NSS for TCP if available, Go for default H3); Neqo uses NSS.
 	Transport            string // Empty selects h2-connect.
 	QUICBackend          string // Empty/quic-go preserves the default; neqo is an opt-in build.

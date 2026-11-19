@@ -24,6 +24,11 @@ Go-сборка использует Go TLS/quic-go. Полный Linux-архи
 `--engine auto` выбирает Necko для совместимых CONNECT, иначе NSS/Go;
 `--engine necko` отвергает неподдерживаемые настройки без скрытого переключения.
 `--engine mozilla` требует NSS/Neqo для выбранного транспорта.
+`--engine firefox` требует проверенный полный Necko runtime и использует настоящий
+стек Gecko/Necko/NSS, без перехода на Go TLS/quic-go. В Linux AMD64/ARM64
+укажите `--necko-bundle`, если runtime не находится рядом с исполняемым файлом.
+На других платформах такой режим недоступен. `firefox` — строгий вариант
+`necko`, а не новый сетевой протокол или гарантия совпадения трафика с браузером.
 Доступные backend проверяйте через `version --json`. В Go SDK `Engine: "auto"` включается явно.
 
 Necko поддерживает TCP H2/H3 CONNECT и UDP v1 через H2. UDP streaming, multi-node,

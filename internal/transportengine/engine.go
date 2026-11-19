@@ -20,7 +20,8 @@ import (
 )
 
 // Config is local client policy. It is not serialized into connection links.
-// Engine is builtin (default), auto, mozilla (NSS/Neqo) or necko (owned runtime).
+// Engine is builtin (default), auto, mozilla (NSS/Neqo), necko (owned runtime)
+// or firefox (strict native Necko; never falls back to Go).
 type Config struct {
 	NeckoBundle string
 	// AutoNeckoExcluded prevents selecting Necko for features that its runtime cannot enforce.
@@ -62,7 +63,7 @@ func DefaultNeckoBundle() string {
 }
 
 func Resolve(cfg Config) (Plan, error) {
-	if cfg.NeckoBundle != "" && cfg.Engine != "necko" && cfg.Engine != "auto" {
+	if cfg.NeckoBundle != "" && cfg.Engine != "necko" && cfg.Engine != "auto" && cfg.Engine != "firefox" {
 		return Plan{}, errors.New("Necko bundle requires engine necko or auto")
 	}
 	switch cfg.Engine {
@@ -97,6 +98,22 @@ func Resolve(cfg Config) (Plan, error) {
 		}
 		cfg.Engine = "builtin"
 		return Plan{Config: cfg}, nil
+	case "firefox":
+		// Firefox mode requires the actual Gecko network stack. An engine
+		// name or a synthetic TLS profile is not a substitute for Necko.
+		// Resolve the bundle here so SDK and CLI have the same fail-closed
+		// semantics even when no explicit bundle path is supplied.
+		if runtime.GOOS != "linux" || (runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64") {
+			return Plan{}, errors.New("Firefox engine requires Linux amd64 or ARM64")
+		}
+		if cfg.NeckoBundle == "" {
+			cfg.NeckoBundle = DefaultNeckoBundle()
+		}
+		if cfg.NeckoBundle == "" {
+			return Plan{}, errors.New("Firefox engine requires a verified Necko bundle; use the full Linux Mozilla release or set NeckoBundle")
+		}
+		cfg.Engine = "necko"
+		return Resolve(cfg)
 	case "necko":
 		if runtime.GOOS != "linux" || (runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64") {
 			return Plan{}, errors.New("Necko requires Linux amd64 or ARM64")
@@ -117,7 +134,7 @@ func Resolve(cfg Config) (Plan, error) {
 	case "mozilla":
 		return resolveMozilla(cfg)
 	default:
-		return Plan{}, fmt.Errorf("unknown transport engine %q (choose builtin, auto, mozilla or necko)", cfg.Engine)
+		return Plan{}, fmt.Errorf("unknown transport engine %q (choose builtin, auto, mozilla, necko or firefox)", cfg.Engine)
 	}
 }
 
