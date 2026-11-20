@@ -577,7 +577,7 @@ func main() {
 		failClient := func(v ...any) { client.Close(); log.Fatal(v...) }
 		intent := transportengine.Config{
 			Engine: *engine, Transport: *nativeTransport, NeckoBundle: *neckoBundle,
-			BrowserProfile: *browserProfile,
+			BrowserProfile:    *browserProfile,
 			AutoNeckoExcluded: ((wirePolicy == contract.ProtocolStrict || *padding || *adaptivePadding) && !transportengine.NativeHTTPHeaders(*nativeTransport)),
 			TLSBackend:        *tlsBackend, QUICBackend: *quicBackend,
 			H3Fallback: *h3Fallback, QUICHandshakeTimeout: *quicTimeout,
