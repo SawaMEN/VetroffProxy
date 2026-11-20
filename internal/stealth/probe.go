@@ -13,6 +13,7 @@ import (
 
 const (
 	ProbeHeader = "X-Vetroff-Proof"
+	ProbeAcceptedHeader = "X-Vetroff-Proof-Accepted"
 	ProbeWindow = 30 * time.Second
 	MaxProbeCache = 4096
 	probeDomain = "VetroffProxy/probe-v1:"
@@ -73,6 +74,22 @@ func NewProbeProof(key string) (string, error) {
 	token := base64.RawURLEncoding.EncodeToString(nonce[:])
 	signature := base64.RawURLEncoding.EncodeToString(proofMAC(b, stamp, token))
 	return stamp + "." + token + "." + signature, nil
+}
+
+// ProbeConfirmation authenticates server acceptance of one precise request.
+func ProbeConfirmation(key, proof string) (string, error) {
+	b, ok := keyBytes(key)
+	if !ok { return "", ErrProbeKey }
+	mac := hmac.New(sha256.New, b)
+	mac.Write([]byte("VetroffProxy/probe-accepted-v1:"))
+	mac.Write([]byte(proof))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
+}
+
+func VerifyProbeConfirmation(key, proof, received string) bool {
+	if len(received) != 43 { return false }
+	expected, err := ProbeConfirmation(key, proof)
+	return err == nil && hmac.Equal([]byte(expected), []byte(received))
 }
 
 func VerifyProbeProof(key, proof string, now time.Time) (int64, bool) {

@@ -82,7 +82,7 @@ type Server struct {
 
 func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	if protocolRequest(r) && s.authorized(r) {
-		if s.ProbeKey != "" && !s.acceptProbe(r) {
+		if s.ProbeKey != "" && !s.acceptProbe(w, r) {
 			s.cover(w, r)
 			return
 		}
@@ -227,7 +227,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 
 // acceptProbe consumes an authenticated proof exactly once. The fixed-size
 // cache refuses new proofs when full rather than evicting live replay entries.
-func (s *Server) acceptProbe(r *http.Request) bool {
+func (s *Server) acceptProbe(w http.ResponseWriter, r *http.Request) bool {
 	proof, present, valid := protocolValue(r.Header, stealth.ProbeHeader)
 	if !valid || !present {
 		return false
@@ -256,6 +256,9 @@ func (s *Server) acceptProbe(r *http.Request) bool {
 		}
 	}
 	s.probeUsed[proof] = stamp + int64(stealth.ProbeWindow/time.Second)
+	confirmation, err := stealth.ProbeConfirmation(s.ProbeKey, proof)
+	if err != nil { return false }
+	w.Header().Set(stealth.ProbeAcceptedHeader, confirmation)
 	return true
 }
 

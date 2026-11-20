@@ -199,6 +199,9 @@ func (c *Client) exchangeUDP(ctx context.Context, wire []byte) (reply []byte, er
 		if err := c.verifyProtocol(resp, "udp-v1"); err != nil {
 			return nil, err
 		}
+		if err := c.verifyProbeConfirmation(req, resp); err != nil {
+			return nil, err
+		}
 	}
 	if resp.StatusCode == http.StatusNoContent {
 		return nil, nil

@@ -82,12 +82,12 @@ func TestProbeGuardReplayRefusalAndNoDowngrade(t *testing.T) {
 	}
 	r := httptest.NewRequest(http.MethodConnect, "https://example.com", nil)
 	r.Header.Set(stealth.ProbeHeader, proof)
-	if !s.acceptProbe(r) || s.acceptProbe(r) {
+	if !s.acceptProbe(httptest.NewRecorder(), r) || s.acceptProbe(httptest.NewRecorder(), r) {
 		t.Fatal("fresh signed proof not accepted exactly once")
 	}
 	r2 := httptest.NewRequest(http.MethodConnect, "https://example.com", nil)
 	r2.Header.Set(stealth.ProbeHeader, proof)
-	if s.acceptProbe(r2) {
+	if s.acceptProbe(httptest.NewRecorder(), r2) {
 		t.Fatal("replayed proof accepted")
 	}
 	fresh, err := stealth.NewProbeProof(key)
@@ -95,13 +95,13 @@ func TestProbeGuardReplayRefusalAndNoDowngrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	r2.Header.Set(stealth.ProbeHeader, fresh)
-	if !s.acceptProbe(r2) {
+	if !s.acceptProbe(httptest.NewRecorder(), r2) {
 		t.Fatal("second distinct proof refused")
 	}
 	s.probeMu.Lock()
 	s.probeUsed = map[string]int64{proof: 1}
 	s.probeMu.Unlock()
-	if !s.acceptProbe(r2) {
+	if !s.acceptProbe(httptest.NewRecorder(), r2) {
 		// Reusing r2 is still a replay; ensure expiry alone did not enable it.
 	} else {
 		t.Fatal("replay unexpectedly reset by cache edit")

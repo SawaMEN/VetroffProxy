@@ -141,6 +141,8 @@ func (c *Client) openTunnel(ctx context.Context, target string) (stream *openStr
 				err = &ConnectResponseError{HTTPMajor: resp.ProtoMajor, HTTPStatus: resp.StatusCode}
 			} else if protocolErr := c.verifyProtocol(resp, "tcp"); protocolErr != nil {
 				err = protocolErr
+			} else if probeErr := c.verifyProbeConfirmation(req, resp); probeErr != nil {
+				err = probeErr
 			} else {
 				negotiated, paddingErr := paddingModeRequested(resp.Header)
 				if paddingErr != nil || negotiated != c.paddingMode() {

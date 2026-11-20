@@ -47,7 +47,12 @@ func TestProbeKeyAndTimeBoundProof(t *testing.T) {
 	if _, ok := VerifyProbeProof(otherKey, proof, now); ok {
 		t.Fatal("proof accepted with unrelated key")
 	}
-	for _, malformed := range []string{"", "0", proof+".x", proof[:len(proof)-1]+"x", strings.Replace(proof, ".", "..", 1)} {
+	ack, err := ProbeConfirmation(key, proof)
+	if err != nil || !VerifyProbeConfirmation(key, proof, ack) ||
+		VerifyProbeConfirmation(otherKey, proof, ack) || VerifyProbeConfirmation(key, proof+"x", ack) {
+		t.Fatal("signed acknowledgement not tied to exact request")
+	}
+	for _, malformed := range []string{"", "0", proof+".x", proof[:len(proof)-1] + map[bool]string{true: "y", false: "x"}[proof[len(proof)-1] == 'x'], strings.Replace(proof, ".", "..", 1)} {
 		if _, ok := VerifyProbeProof(key, malformed, now); ok {
 			t.Fatalf("malformed proof accepted: %q", malformed)
 		}

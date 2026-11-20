@@ -100,6 +100,9 @@ func (c *Client) openUDPStreamTo(parent context.Context, endpoint *url.URL) (str
 	if err := c.verifyProtocol(response, "udp-stream-v2"); err != nil {
 		return nil, err
 	}
+	if err := c.verifyProbeConfirmation(req, response); err != nil {
+		return nil, err
+	}
 	keep = true
 	return &udpStream{response: response.Body, reader: reader, writer: writer, cancel: cancel}, nil
 }
