@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/SawaMEN/VetroffProxy/internal/buildinfo"
+	"github.com/SawaMEN/VetroffProxy/internal/h2profile"
 	"github.com/SawaMEN/VetroffProxy/internal/neqo"
 	"github.com/SawaMEN/VetroffProxy/internal/nsstls"
 	"github.com/SawaMEN/VetroffProxy/internal/tlsidentity"
@@ -34,6 +35,8 @@ type Config struct {
 	QUICHandshakeTimeout time.Duration
 	TLSClientProfile     string
 	HTTP2ReceiveProfile  string
+	// BrowserProfile selects one measured, fail-closed local H2/TLS preset.
+	BrowserProfile string
 }
 
 // Plan is a resolved, build-aware selection of the existing native transports.
@@ -61,7 +64,33 @@ func DefaultNeckoBundle() string {
 	return dir
 }
 
+// BrowserFirefox158 is a pinned set of measured TLS/H2 preferences, not a
+// complete Firefox browser or a promise of indistinguishable proxy traffic.
+const BrowserFirefox158 = "firefox-158"
+
 func Resolve(cfg Config) (Plan, error) {
+	if cfg.BrowserProfile != "" && cfg.BrowserProfile != "none" {
+		if cfg.BrowserProfile != BrowserFirefox158 {
+			return Plan{}, errors.New("unknown browser profile; supported: firefox-158")
+		}
+		if cfg.NeckoBundle != "" || (cfg.Engine != "" && cfg.Engine != "builtin" && cfg.Engine != "auto" && cfg.Engine != "mozilla") {
+			return Plan{}, errors.New("firefox-158 browser profile requires the native Mozilla NSS engine")
+		}
+		if cfg.Transport == "" {
+			cfg.Transport = "h2-connect"
+		}
+		if cfg.Transport != "h2-connect" && cfg.Transport != "h2-post" {
+			return Plan{}, errors.New("firefox-158 browser profile only supports H2 CONNECT/POST; H3 and XHTTP are not certified")
+		}
+		if (cfg.TLSClientProfile != "" && cfg.TLSClientProfile != "default" && cfg.TLSClientProfile != nsstls.Firefox158) ||
+			(cfg.HTTP2ReceiveProfile != "" && cfg.HTTP2ReceiveProfile != "default" && cfg.HTTP2ReceiveProfile != h2profile.Firefox158) {
+			return Plan{}, errors.New("browser profile conflicts with manually selected TLS/H2 profiles")
+		}
+		cfg.Engine = "mozilla"
+		cfg.TLSClientProfile = nsstls.Firefox158
+		cfg.HTTP2ReceiveProfile = h2profile.Firefox158
+		return resolveMozilla(cfg) // No automatic downgrade to Go TLS without NSS.
+	}
 	if cfg.NeckoBundle != "" && cfg.Engine != "necko" && cfg.Engine != "auto" {
 		return Plan{}, errors.New("Necko bundle requires engine necko or auto")
 	}
