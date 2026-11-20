@@ -119,6 +119,19 @@ change network packet sizes; it neither modifies TLS/QUIC packets directly nor
 establishes browser fingerprint equivalence or TSPU bypass. Both peers must
 support the mode, and UDP relays, Bond and discovery are not padded by it.
 
+
+### Optional local timing jitter
+
+An implementation MAY insert a short, cancellable delay before writing small
+adaptive-v1 frames (payload <=256 bytes). This is a local policy, **not** an
+additional wire capability, header, packet type or negotiation field. The
+supported configurable maximum is 5ms per qualifying record; records over
+256 bytes are never artificially delayed by this feature. A zero setting
+preserves existing behavior, and peer endpoints may configure delays
+independently. Cancellation must interrupt a pending delay before emission.
+Implementations must not attach extra bytes outside the authenticated HTTP
+stream. This remains experimental: delay changes do not prove DPI resistance.
+
 ## Application UDP relay
 
 UDP is opt-in on both ends and independent of the outer H3/QUIC transport.
