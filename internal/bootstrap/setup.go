@@ -21,6 +21,7 @@ import (
 	"github.com/SawaMEN/VetroffProxy/internal/egress"
 	"github.com/SawaMEN/VetroffProxy/internal/profile"
 	"github.com/SawaMEN/VetroffProxy/internal/safejson"
+	"github.com/SawaMEN/VetroffProxy/internal/stealth"
 	"github.com/SawaMEN/VetroffProxy/internal/tlsidentity"
 	"github.com/SawaMEN/VetroffProxy/internal/xhttp"
 )
@@ -37,6 +38,7 @@ type ServerConfig struct {
 	H3Listen        string                  `json:"h3_listen,omitempty"`
 	EnableUDP       bool                    `json:"enable_udp,omitempty"`
 	AdaptivePadding bool                    `json:"adaptive_padding,omitempty"`
+	TimingJitter    string                  `json:"timing_jitter,omitempty"`
 	Listen          string                  `json:"listen"`
 	Certificate     string                  `json:"cert"`
 	PrivateKey      string                  `json:"key"`
@@ -57,6 +59,7 @@ type Options struct {
 	Server, Certificate, PrivateKey, Output, SNI, CACertFile, JoinLinkFile, UpstreamCAFile, WebRoot string
 	TLSBackend, Transport, XHTTPPath, XHTTPHost                                                     string
 	EnableUDP, AdaptivePadding                                                                      bool
+	TimingJitter                                                                                   time.Duration
 }
 
 var ErrConfig = errors.New("invalid server configuration")
@@ -83,6 +86,9 @@ func ReadServer(path string) (ServerConfig, error) {
 		return ServerConfig{}, ErrConfig
 	}
 	if c.ProtocolPolicy.Validate() != nil || c.ProtocolPolicy == contract.ProtocolStrict && (c.BondHub || c.BondUpstream != "" || c.ClusterFile != "") {
+		return ServerConfig{}, ErrConfig
+	}
+	if _, err := stealth.ParseTimingJitter(c.TimingJitter, c.AdaptivePadding); err != nil {
 		return ServerConfig{}, ErrConfig
 	}
 	if c.XHTTPPath != "" || c.XHTTPHost != "" {
@@ -115,6 +121,9 @@ func ReadServer(path string) (ServerConfig, error) {
 }
 
 func Generate(o Options) error {
+	if err := stealth.ValidateTimingJitter(o.TimingJitter, o.AdaptivePadding); err != nil {
+		return ErrSetup
+	}
 	if o.ProtocolPolicy.Validate() != nil || o.ProtocolPolicy == contract.ProtocolStrict && o.JoinLinkFile != "" || o.AdaptivePadding && o.ProtocolPolicy != contract.ProtocolStrict {
 		return ErrSetup
 	}
@@ -192,12 +201,13 @@ func Generate(o Options) error {
 	listen := net.JoinHostPort("", port)
 	config := ServerConfig{EnableUDP: o.EnableUDP, AdaptivePadding: o.AdaptivePadding, Version: 1, Listen: listen, Certificate: certPath, PrivateKey: keyPath, Username: "vetroff", MaxTunnels: 256, MaxConnections: 512}
 	config.ProtocolPolicy = o.ProtocolPolicy
+	config.TimingJitter = stealth.FormatTimingJitter(o.TimingJitter)
 	var secret [32]byte
 	if _, err := rand.Read(secret[:]); err != nil {
 		return ErrSetup
 	}
 	config.Password = base64.RawURLEncoding.EncodeToString(secret[:])
-	linkConfig := profile.Config{Version: 1, Servers: []string{u.String()}, Username: config.Username, Password: config.Password, SNI: policy.SNI, PinSHA256: policy.PinSHA256, Encryption: "tls13", TLSBackend: o.TLSBackend, Transport: o.Transport, XHTTPPath: o.XHTTPPath, XHTTPHost: o.XHTTPHost, Bond: true, Discover: true, AdaptivePadding: o.AdaptivePadding}
+	linkConfig := profile.Config{Version: 1, Servers: []string{u.String()}, Username: config.Username, Password: config.Password, SNI: policy.SNI, PinSHA256: policy.PinSHA256, Encryption: "tls13", TLSBackend: o.TLSBackend, Transport: o.Transport, XHTTPPath: o.XHTTPPath, XHTTPHost: o.XHTTPHost, Bond: true, Discover: true, AdaptivePadding: o.AdaptivePadding, TimingJitter: stealth.FormatTimingJitter(o.TimingJitter)}
 	linkConfig.ProtocolPolicy = o.ProtocolPolicy
 	if o.ProtocolPolicy == contract.ProtocolStrict {
 		linkConfig.Bond, linkConfig.Discover = false, false
