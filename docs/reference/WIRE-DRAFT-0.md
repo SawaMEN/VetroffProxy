@@ -156,6 +156,34 @@ stack may merge writes. Extra frames increase overhead and can impair
 throughput. No censorship/DPI bypass properties are established.
 
 
+### Optional bounded traffic shaping (Stealth stage 5)
+
+An adaptive-v1 sender MAY enable local `traffic_shaping` and vary only
+the zero-filled padding length of existing authenticated HTTPS frames.
+The sender tracks cumulative useful bytes U and cumulative zero-padding
+bytes P in a single direction and enforces **P <= floor(U/8)**.
+Every frame still uses the unchanged adaptive-v1 3-byte header and
+per-record upper bound of `min(255, 24 + floor(N/8))` padding bytes.
+The compulsory 3-byte frame headers are not included in this optional
+zero-padding budget.
+
+If possible within both limits, the writer extends each inner frame
+(including its three-byte header) to the next size class in
+`64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384`. Otherwise
+it selects bounded random padding using the available budget. No
+zero-payload frames, synthetic requests, keepalives, dummy streams
+or additional scheduling delays are introduced.
+
+A plain adaptive-v1 reader can decode every record unchanged. No new
+capability token, TLS fingerprint or version bump is required.
+Either direction MAY enable shaping independently. Adaptive fragmentation
+and timing jitter are separate policies, disabled by default.
+
+The budget excludes HTTP/2 or HTTP/3 framing, TLS records, TCP/IP
+headers and the mandatory internal record headers. Size classes do not
+guarantee any specific **on-wire TLS record or IP packet size**, and
+neither DPI bypass nor browser-equivalent traffic has been established.
+
 ## Application UDP relay
 
 UDP is opt-in on both ends and independent of the outer H3/QUIC transport.

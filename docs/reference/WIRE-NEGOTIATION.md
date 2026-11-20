@@ -78,6 +78,12 @@ request/echo remains mandatory when padding is selected. Local timing
 jitter and adaptive fragmentation do not change the framed adaptive-v1
 wire format and require no additional capability token.
 
+Local `traffic_shaping` uses the existing `padding-adaptive-v1`
+capability. It changes only the distribution of legal inner padding
+lengths and has no new header, token, or server negotiation field;
+peers may enable it independently, but each sending side must have
+adaptive padding enabled.
+
 ## Responses and errors
 
 A compatible authenticated offer receives `X-Vetroff-Version` with the exact
