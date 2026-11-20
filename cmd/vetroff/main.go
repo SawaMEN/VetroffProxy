@@ -113,9 +113,6 @@ func main() {
 		if err := stealth.ValidateTrafficShaping(*trafficShaping, *adaptivePadding); err != nil {
 			log.Fatal(err)
 		}
-		if err := stealth.ValidateProbeKey(probeKey, wirePolicy == contract.ProtocolStrict); err != nil {
-			log.Fatal(err)
-		}
 		if err := bootstrap.Generate(bootstrap.Options{AdaptivePadding: *adaptivePadding, ProbeGuard: *probeGuard, AdaptiveFragmentation: *adaptiveFragmentation, TrafficShaping: *trafficShaping, TimingJitter: *timingJitter, ProtocolPolicy: wirePolicy, Server: *server, Certificate: *cert, PrivateKey: *key, Output: *out, SNI: *sni, CACertFile: *ca, JoinLinkFile: *join, UpstreamCAFile: *upstreamCA, WebRoot: *web, TLSBackend: *backend, Transport: *transport, XHTTPPath: *xhttpPath, XHTTPHost: *xhttpHost, EnableUDP: *enableUDP}); err != nil {
 			log.Fatal(i18n.Text(err.Error()))
 		}
