@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"testing"
 	"time"
 )
@@ -55,5 +56,36 @@ func TestTimedAdaptivePaddingWriterPreservesPayload(t *testing.T) {
 	got, err := io.ReadAll(newAdaptivePaddingReader(&encoded))
 	if err != nil || !bytes.Equal(got, source.Bytes()) {
 		t.Fatalf("timed adaptive padding roundtrip failed: %v", err)
+	}
+}
+
+func TestTimedAdaptivePaddingSOCKSAndHalfClose(t *testing.T) {
+	target := testDestination(t, func(c net.Conn) {
+		data, _ := io.ReadAll(c)
+		_, _ = c.Write(data)
+	})
+	client, addr := testClient(t, &Server{
+		Username: "alice", Password: "secret", AllowPrivate: true,
+		RequireProtocolNegotiation: true, AdaptivePadding: true,
+		TimingJitter: 2 * time.Millisecond,
+	})
+	client.RequireProtocolNegotiation = true
+	client.AdaptivePadding = true
+	client.TimingJitter = 2 * time.Millisecond
+	conn, code := connectSOCKS(t, addr, target)
+	defer conn.Close()
+	if code != 0 {
+		t.Fatalf("timed SOCKS session rejected: %d", code)
+	}
+	payload := []byte("timed adaptive padding half-close")
+	if _, err := conn.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.(*net.TCPConn).CloseWrite(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(conn)
+	if err != nil || !bytes.Equal(got, payload) {
+		t.Fatalf("timed SOCKS half-close changed bytes: %q, %v", got, err)
 	}
 }
