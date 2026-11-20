@@ -418,7 +418,7 @@ func main() {
 			conflict := false
 			fs.Visit(func(f *flag.Flag) {
 				switch f.Name {
-				case "events-json", "shutdown-on-stdin-eof", "listen", "ca-cert", "lang", "link", "link-file", "enable-udp", "udp-stream", "udp-multi-node", "max-connections", "h2-receive-profile", "tls-client-profile", "bond-lanes", "quic-backend", "h3-fallback", "quic-handshake-timeout", "engine", "necko-bundle", "engine-status-interval", "node-pins-file", "socks-allow-lan", "bond-route", "bond-adaptive", "bond-autotune", "bond-traffic", "bond-metrics-interval", "node-status-interval":
+				case "events-json", "shutdown-on-stdin-eof", "listen", "ca-cert", "lang", "link", "link-file", "enable-udp", "udp-stream", "udp-multi-node", "max-connections", "h2-receive-profile", "tls-client-profile", "bond-lanes", "quic-backend", "h3-fallback", "quic-handshake-timeout", "engine", "necko-bundle", "browser-profile", "engine-status-interval", "node-pins-file", "socks-allow-lan", "bond-route", "bond-adaptive", "bond-autotune", "bond-traffic", "bond-metrics-interval", "node-status-interval":
 				default:
 					conflict = true
 				}
