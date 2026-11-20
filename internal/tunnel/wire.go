@@ -150,7 +150,9 @@ func (c *Client) requestProtocol(r *http.Request, capability string) error {
 // Require a signed acknowledgement from a peer that knows the probe key;
 // a legacy server must never be silently accepted by an opted-in client.
 func (c *Client) verifyProbeConfirmation(req *http.Request, resp *http.Response) error {
-	if c.ProbeKey == "" { return nil }
+	if c.ProbeKey == "" {
+		return nil
+	}
 	value, present, valid := protocolValue(resp.Header, stealth.ProbeAcceptedHeader)
 	if !present || !valid || !stealth.VerifyProbeConfirmation(c.ProbeKey, req.Header.Get(stealth.ProbeHeader), value) {
 		return ErrProtocolNegotiation

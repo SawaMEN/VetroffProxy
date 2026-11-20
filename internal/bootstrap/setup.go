@@ -38,7 +38,7 @@ type ServerConfig struct {
 	H3Listen              string                  `json:"h3_listen,omitempty"`
 	EnableUDP             bool                    `json:"enable_udp,omitempty"`
 	AdaptivePadding       bool                    `json:"adaptive_padding,omitempty"`
-	ProbeKey               string                  `json:"probe_key,omitempty"`
+	ProbeKey              string                  `json:"probe_key,omitempty"`
 	AdaptiveFragmentation bool                    `json:"adaptive_fragmentation,omitempty"`
 	TrafficShaping        bool                    `json:"traffic_shaping,omitempty"`
 	TimingJitter          string                  `json:"timing_jitter,omitempty"`
@@ -62,7 +62,7 @@ type Options struct {
 	Server, Certificate, PrivateKey, Output, SNI, CACertFile, JoinLinkFile, UpstreamCAFile, WebRoot string
 	TLSBackend, Transport, XHTTPPath, XHTTPHost                                                     string
 	EnableUDP, AdaptivePadding, AdaptiveFragmentation, TrafficShaping                               bool
-	ProbeGuard                                                                                     bool
+	ProbeGuard                                                                                      bool
 	TimingJitter                                                                                    time.Duration
 }
 

@@ -32,8 +32,8 @@ type Server struct {
 	RequireProtocolNegotiation bool
 	// ProbeKey requires a fresh HMAC proof on every authenticated TCP/UDP
 	// transport request. Empty keeps the existing cover/auth behavior.
-	ProbeKey string
-	probeMu sync.Mutex
+	ProbeKey  string
+	probeMu   sync.Mutex
 	probeUsed map[string]int64
 
 	// Access is mutually exclusive with builtin credentials; set before serving.
@@ -257,7 +257,9 @@ func (s *Server) acceptProbe(w http.ResponseWriter, r *http.Request) bool {
 	}
 	s.probeUsed[proof] = stamp + int64(stealth.ProbeWindow/time.Second)
 	confirmation, err := stealth.ProbeConfirmation(s.ProbeKey, proof)
-	if err != nil { return false }
+	if err != nil {
+		return false
+	}
 	w.Header().Set(stealth.ProbeAcceptedHeader, confirmation)
 	return true
 }

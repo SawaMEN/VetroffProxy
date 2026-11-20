@@ -44,7 +44,7 @@ type Config struct {
 	Pipeline              string                  `json:"pipeline,omitempty"`
 	Padding               bool                    `json:"padding,omitempty"`
 	AdaptivePadding       bool                    `json:"adaptive_padding,omitempty"`
-	ProbeKey               string                  `json:"probe_key,omitempty"`
+	ProbeKey              string                  `json:"probe_key,omitempty"`
 	AdaptiveFragmentation bool                    `json:"adaptive_fragmentation,omitempty"`
 	TrafficShaping        bool                    `json:"traffic_shaping,omitempty"`
 	TimingJitter          string                  `json:"timing_jitter,omitempty"`

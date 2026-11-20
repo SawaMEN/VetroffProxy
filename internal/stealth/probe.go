@@ -12,11 +12,11 @@ import (
 )
 
 const (
-	ProbeHeader = "X-Vetroff-Proof"
+	ProbeHeader         = "X-Vetroff-Proof"
 	ProbeAcceptedHeader = "X-Vetroff-Proof-Accepted"
-	ProbeWindow = 30 * time.Second
-	MaxProbeCache = 4096
-	probeDomain = "VetroffProxy/probe-v1:"
+	ProbeWindow         = 30 * time.Second
+	MaxProbeCache       = 4096
+	probeDomain         = "VetroffProxy/probe-v1:"
 )
 
 var ErrProbeKey = errors.New("probe key requires strict protocol negotiation and 32 random bytes")
@@ -79,7 +79,9 @@ func NewProbeProof(key string) (string, error) {
 // ProbeConfirmation authenticates server acceptance of one precise request.
 func ProbeConfirmation(key, proof string) (string, error) {
 	b, ok := keyBytes(key)
-	if !ok { return "", ErrProbeKey }
+	if !ok {
+		return "", ErrProbeKey
+	}
 	mac := hmac.New(sha256.New, b)
 	mac.Write([]byte("VetroffProxy/probe-accepted-v1:"))
 	mac.Write([]byte(proof))
@@ -87,7 +89,9 @@ func ProbeConfirmation(key, proof string) (string, error) {
 }
 
 func VerifyProbeConfirmation(key, proof, received string) bool {
-	if len(received) != 43 { return false }
+	if len(received) != 43 {
+		return false
+	}
 	expected, err := ProbeConfirmation(key, proof)
 	return err == nil && hmac.Equal([]byte(expected), []byte(received))
 }
