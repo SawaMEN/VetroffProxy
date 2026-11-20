@@ -17,6 +17,7 @@ import (
 	"github.com/SawaMEN/VetroffProxy/internal/cluster"
 	"github.com/SawaMEN/VetroffProxy/internal/contract"
 	"github.com/SawaMEN/VetroffProxy/internal/i18n"
+	"github.com/SawaMEN/VetroffProxy/internal/stealth"
 	"github.com/SawaMEN/VetroffProxy/internal/tlsidentity"
 	"github.com/SawaMEN/VetroffProxy/internal/xhttp"
 )
@@ -43,6 +44,7 @@ type Config struct {
 	Pipeline        string                  `json:"pipeline,omitempty"`
 	Padding         bool                    `json:"padding,omitempty"`
 	AdaptivePadding bool                    `json:"adaptive_padding,omitempty"`
+	TimingJitter    string                  `json:"timing_jitter,omitempty"`
 	ConnectTimeout  string                  `json:"connect_timeout,omitempty"`
 	AttemptTimeout  string                  `json:"attempt_timeout,omitempty"`
 }
@@ -124,6 +126,9 @@ func (c *Config) normalize() error {
 	if c.Padding && c.AdaptivePadding {
 		return invalid()
 	}
+	if _, err := stealth.ParseTimingJitter(c.TimingJitter, c.AdaptivePadding); err != nil {
+		return invalid()
+	}
 	if c.Discover && (!c.Bond || len(c.Servers) != 1) {
 		return invalid()
 	}
@@ -196,7 +201,7 @@ func uniqueFields(data []byte) bool {
 		return false
 	}
 	seen := make(map[string]bool)
-	allowed := map[string]bool{"v": true, "servers": true, "username": true, "password": true, "tls": true, "transport": true, "xhttp_path": true, "xhttp_host": true, "sni": true, "pin_sha256": true, "encryption": true, "balance": true, "bond": true, "discover": true, "pipeline": true, "padding": true, "adaptive_padding": true, "connect_timeout": true, "attempt_timeout": true}
+	allowed := map[string]bool{"v": true, "servers": true, "username": true, "password": true, "tls": true, "transport": true, "xhttp_path": true, "xhttp_host": true, "sni": true, "pin_sha256": true, "encryption": true, "balance": true, "bond": true, "discover": true, "pipeline": true, "padding": true, "adaptive_padding": true, "timing_jitter": true, "connect_timeout": true, "attempt_timeout": true}
 	allowed["protocol_policy"] = true
 	for decoder.More() {
 		token, err := decoder.Token()
