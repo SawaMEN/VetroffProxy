@@ -49,12 +49,12 @@ func TestAdaptivePaddingRejectsBondProfile(t *testing.T) {
 
 func TestTimingJitterLinkToSDK(t *testing.T) {
 	link, err := profile.Encode(profile.Config{
-		Version:        1,
-		Servers:        []string{"https://example.com"},
-		Username:       "alice",
-		Password:       "secret",
+		Version:         1,
+		Servers:         []string{"https://example.com"},
+		Username:        "alice",
+		Password:        "secret",
 		AdaptivePadding: true,
-		TimingJitter:   "3ms",
+		TimingJitter:    "3ms",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +69,7 @@ func TestTimingJitterSDKRejectsInvalidSettings(t *testing.T) {
 	for _, cfg := range []vetroff.ClientConfig{
 		{TimingJitter: time.Millisecond},
 		{AdaptivePadding: true, TimingJitter: -time.Millisecond},
-		{AdaptivePadding: true, TimingJitter: 6*time.Millisecond},
+		{AdaptivePadding: true, TimingJitter: 6 * time.Millisecond},
 	} {
 		if _, err := vetroff.NewClient(cfg); err == nil {
 			t.Fatal("client accepted invalid timing options", cfg)
@@ -77,7 +77,7 @@ func TestTimingJitterSDKRejectsInvalidSettings(t *testing.T) {
 	}
 	for _, cfg := range []vetroff.ServerConfig{
 		{TimingJitter: time.Millisecond},
-		{AdaptivePadding: true, TimingJitter: 6*time.Millisecond},
+		{AdaptivePadding: true, TimingJitter: 6 * time.Millisecond},
 	} {
 		if _, err := vetroff.NewServer(cfg); err == nil {
 			t.Fatal("server accepted invalid timing options", cfg)
