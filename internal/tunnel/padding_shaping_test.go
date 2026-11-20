@@ -78,7 +78,7 @@ func TestTrafficShapingCumulativeBudgetAndLegacyDecoder(t *testing.T) {
 
 func TestTrafficShapingSOCKSInteroperability(t *testing.T) {
 	for _, tc := range []struct {
-		name string
+		name                     string
 		client, server, fragment bool
 	}{
 		{"shaped client", true, false, false},
