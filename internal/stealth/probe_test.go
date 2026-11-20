@@ -37,6 +37,18 @@ func TestProbeKeyAndTimeBoundProof(t *testing.T) {
 	if !ok || stamp == 0 {
 		t.Fatal("generated proof failed to verify")
 	}
+	// The last Base64url sextet contains two unused bits. Altering only
+	// those bits must fail: otherwise the same HMAC could be replayed
+	// under a different textual token and bypass the replay cache.
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+	last := strings.IndexByte(alphabet, proof[len(proof)-1])
+	if last < 0 {
+		t.Fatal("invalid proof encoding")
+	}
+	nonCanonical := proof[:len(proof)-1] + string(alphabet[last^1])
+	if _, ok := VerifyProbeProof(key, nonCanonical, now); ok {
+		t.Fatal("noncanonical Base64url signature accepted as distinct replay token")
+	}
 	if _, ok := VerifyProbeProof(key, proof, now.Add(2*ProbeWindow)); ok {
 		t.Fatal("expired probe proof was accepted")
 	}

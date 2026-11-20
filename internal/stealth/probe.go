@@ -117,6 +117,7 @@ func VerifyProbeProof(key, proof string, now time.Time) (int64, bool) {
 	}
 	sig, err := base64.RawURLEncoding.DecodeString(pieces[2])
 	if err != nil || len(sig) != sha256.Size ||
+		base64.RawURLEncoding.EncodeToString(sig) != pieces[2] ||
 		!hmac.Equal(sig, proofMAC(b, pieces[0], pieces[1])) {
 		return 0, false
 	}
