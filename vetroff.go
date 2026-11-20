@@ -69,11 +69,11 @@ type ClientConfig struct {
 	HTTP2ReceiveProfile    string
 	TLSClientProfile       string // Local opt-in NSS preferences; empty keeps the default.
 	Padding                bool
-	AdaptivePadding        bool // Continuous bounded framing; requires matching server support.
+	AdaptivePadding        bool          // Continuous bounded framing; requires matching server support.
 	TimingJitter           time.Duration // Per-small-record maximum delay (0..5ms); requires adaptive padding.
-	EnableUDP              bool // Experimental datagram API and SOCKS5 UDP; off by default.
-	UDPMultiNode           bool // Pin destination flows to configured UDP exits.
-	UDPStreaming           bool // Opt-in v2 persistent UDP stream; requires EnableUDP.
+	EnableUDP              bool          // Experimental datagram API and SOCKS5 UDP; off by default.
+	UDPMultiNode           bool          // Pin destination flows to configured UDP exits.
+	UDPStreaming           bool          // Opt-in v2 persistent UDP stream; requires EnableUDP.
 	ConnectTimeout         time.Duration
 	MaxConnections         int // Combined TCP/UDP connections and pending operations; 0 uses 256.
 	FallbackServers        []string
@@ -132,7 +132,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 	}()
 	plan, err := transportengine.Resolve(transportengine.Config{
 		Engine: config.Engine, Transport: config.Transport, NeckoBundle: config.NeckoBundle,
-		BrowserProfile: config.BrowserProfile,
+		BrowserProfile:    config.BrowserProfile,
 		AutoNeckoExcluded: ((config.RequireProtocolNegotiation || config.Padding || config.AdaptivePadding) && !transportengine.NativeHTTPHeaders(config.Transport)),
 		TLSBackend:        config.TLSBackend, QUICBackend: config.QUICBackend,
 		H3Fallback: config.H3Fallback, QUICHandshakeTimeout: config.QUICHandshakeTimeout,
@@ -393,9 +393,9 @@ type ServerConfig struct {
 	MaxTunnels               int  // 0 uses 256.
 	DialTimeout              time.Duration
 	Padding                  bool
-	AdaptivePadding          bool         // Accept opt-in adaptive-v1 mode alongside initial-v1.
+	AdaptivePadding          bool          // Accept opt-in adaptive-v1 mode alongside initial-v1.
 	TimingJitter             time.Duration // Max 5ms; only on small adaptive downlink records.
-	Cover                    http.Handler // Public site for ordinary/rejected requests; nil returns 404.
+	Cover                    http.Handler  // Public site for ordinary/rejected requests; nil returns 404.
 }
 
 // Server is an http.Handler for verified TLS 1.3 with HTTP/2 enabled by the host.
