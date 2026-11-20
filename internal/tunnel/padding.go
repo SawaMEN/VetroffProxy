@@ -1,6 +1,7 @@
 package tunnel
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
@@ -8,6 +9,9 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"time"
+
+	"github.com/SawaMEN/VetroffProxy/internal/stealth"
 )
 
 const (
@@ -67,6 +71,42 @@ func newAdaptivePaddingWriter(w io.Writer) *paddingWriter {
 	return &paddingWriter{writer: w, adaptive: true}
 }
 
+// newTimedAdaptivePaddingWriter applies optional, cancellable delays only to
+// small application frames. Large records, disabled mode and both half-closes
+// retain their existing behavior. Jitter is local and does not alter the wire.
+func newTimedAdaptivePaddingWriter(w io.Writer, ctx context.Context, maxDelay time.Duration) *paddingWriter {
+	return &paddingWriter{writer: w, adaptive: true, ctx: ctx, jitter: maxDelay}
+}
+
+func timingJitterDelay(sample byte, maxDelay time.Duration) time.Duration {
+	return time.Duration(sample&3) * maxDelay / 3
+}
+
+func waitTimingJitter(ctx context.Context, delay time.Duration) error {
+	if delay == 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (w *paddingWriter) delaySmallRecord(n int) error {
+	if w.jitter <= 0 || n > stealth.SmallRecordLimit {
+		return nil
+	}
+	var draw [1]byte
+	if _, err := io.ReadFull(rand.Reader, draw[:]); err != nil {
+		return err
+	}
+	return waitTimingJitter(w.ctx, timingJitterDelay(draw[0], w.jitter))
+}
+
 func newAdaptivePaddingReader(r io.Reader) *paddingReader {
 	return &paddingReader{reader: r, adaptive: true}
 }
@@ -80,6 +120,8 @@ type paddingWriter struct {
 	writer   io.Writer
 	records  int
 	adaptive bool
+	ctx      context.Context
+	jitter   time.Duration
 	err      error
 }
 
@@ -119,6 +161,10 @@ func (w *paddingWriter) Write(p []byte) (int, error) {
 		// A pooled buffer can contain another stream's plaintext. Never transmit it
 		// as padding. Padding is zero-filled inside the encrypted TLS connection.
 		clear(buffer[3+n : 3+n+pad])
+		if err := w.delaySmallRecord(n); err != nil {
+			w.err = err
+			return total, err
+		}
 		if err := writePaddingFrame(w.writer, buffer[:3+n+pad]); err != nil {
 			w.err = err
 			return total, err
