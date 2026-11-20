@@ -132,6 +132,30 @@ independently. Cancellation must interrupt a pending delay before emission.
 Implementations must not attach extra bytes outside the authenticated HTTP
 stream. This remains experimental: delay changes do not prove DPI resistance.
 
+### Optional local adaptive fragmentation (Stealth stage 4)
+
+A sender MAY split large application writes into multiple ordinary
+`adaptive-v1` frames. With the opt-in `adaptive_fragmentation` setting,
+a write with more than 4096 bytes remaining picks each next payload
+length between **1024 and 4096** bytes using a fresh random draw. Its
+final remainder of at most 4096 bytes becomes a regular final frame;
+application writes of at most 4096 bytes are not split. Each resulting
+frame obeys the unchanged adaptive-v1 header, padding bound and
+zero-fill requirements. No padding-only or continuation frames exist.
+
+A peer implementing adaptive-v1 does **not** need the optional shaping
+policy to decode this stream, so there is no new wire version, header,
+capability or fallback. Either sender can enable it independently.
+The timing-jitter policy applies only to originally small application
+writes (at most 256 bytes), never to a small leftover fragment of a
+larger write.
+
+These are application/HTTP-stream boundaries, **not** IP fragmentation
+or direct TLS/QUIC record shaping. The actual HTTP transport and TCP
+stack may merge writes. Extra frames increase overhead and can impair
+throughput. No censorship/DPI bypass properties are established.
+
+
 ## Application UDP relay
 
 UDP is opt-in on both ends and independent of the outer H3/QUIC transport.
