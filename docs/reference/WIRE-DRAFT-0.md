@@ -184,6 +184,40 @@ headers and the mandatory internal record headers. Size classes do not
 guarantee any specific **on-wire TLS record or IP packet size**, and
 neither DPI bypass nor browser-equivalent traffic has been established.
 
+### Opt-in active probe guard (Stealth stage 6)
+
+A server MAY require a second, independently generated 256-bit key
+for each authenticated TCP/UDP proxy request under **strict protocol
+negotiation**. It does not replace TLS 1.3 or Basic/managed
+authorization. The request includes exactly one
+`X-Vetroff-Proof` with three dot-separated fields:
+`unix_seconds.base64url_12_random_bytes.base64url_HMAC_SHA256`.
+The HMAC input is
+`"VetroffProxy/probe-v1:" + unix_seconds + "." + nonce`
+using the 32-byte decoded shared key. The timestamp must be
+canonical decimal and within ±30 seconds of the server clock.
+The server rejects duplicate headers, invalid proof lengths, invalid
+signatures, reused tokens and out-of-window timestamps before any
+destination dialing. A bounded replay cache holds at most 4096
+accepted tokens; exhaustion fails closed. This replay cache is local
+to one server process and is not a distributed guarantee.
+
+When the proof was consumed successfully, the server returns exactly
+one `X-Vetroff-Proof-Accepted` header with base64url HMAC-SHA256
+over `"VetroffProxy/probe-accepted-v1:" + complete_request_proof`,
+using the same key. The client MUST require this confirmation on a
+successful TCP/UDP request when probe guard is configured. A missing,
+duplicate or incorrect confirmation is terminal and MUST NOT
+automatically downgrade to unguarded mode.
+
+Unauthenticated or unproven proxy requests are served by the same
+public cover handler as other ordinary requests; the public handler
+is not given any `X-Vetroff-*` or Proxy-Authorization headers.
+Compatible peers must both support the guard; the default server
+configuration still accepts existing strict clients without it.
+This does not provide stealth from someone who controls the key or
+the TLS termination point, and does not establish resistance to DPI.
+
 ## Application UDP relay
 
 UDP is opt-in on both ends and independent of the outer H3/QUIC transport.

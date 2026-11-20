@@ -84,6 +84,15 @@ lengths and has no new header, token, or server negotiation field;
 peers may enable it independently, but each sending side must have
 adaptive padding enabled.
 
+Optional `probe_key` is a separate secret shared through the private
+connection profile and strict server configuration. Enabling it
+requires both peers to support `X-Vetroff-Proof` and its
+`X-Vetroff-Proof-Accepted` HMAC response. This is **not** the
+`padding-adaptive-v1` capability: probe guard is independent of
+padding. No silent fallback is allowed if the server omits proof
+confirmation. A public cover response must not expose authentication
+or probe headers.
+
 ## Responses and errors
 
 A compatible authenticated offer receives `X-Vetroff-Version` with the exact
