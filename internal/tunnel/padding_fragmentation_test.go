@@ -14,7 +14,7 @@ import (
 func TestAdaptiveFragmentationWireAndOverhead(t *testing.T) {
 	source := bytes.Repeat([]byte("fragmentation-byte-check"), 22000)
 	var wire bytes.Buffer
-	writer := newShapedAdaptivePaddingWriter(&wire, context.Background(), 0, true)
+	writer := newShapedAdaptivePaddingWriter(&wire, context.Background(), 0, true, false)
 	n, err := writer.Write(source)
 	if err != nil || n != len(source) {
 		t.Fatalf("write %d/%d: %v", n, len(source), err)
@@ -65,7 +65,7 @@ func TestAdaptiveFragmentationWireAndOverhead(t *testing.T) {
 func TestAdaptiveFragmentationSmallWritesRemainSingleFrame(t *testing.T) {
 	for _, size := range []int{1, 25, 256, 1024, 4096} {
 		var wire bytes.Buffer
-		writer := newShapedAdaptivePaddingWriter(&wire, context.Background(), 0, true)
+		writer := newShapedAdaptivePaddingWriter(&wire, context.Background(), 0, true, false)
 		payload := bytes.Repeat([]byte{0x63}, size)
 		if n, err := writer.Write(payload); n != size || err != nil {
 			t.Fatalf("size %d: wrote %d: %v", size, n, err)

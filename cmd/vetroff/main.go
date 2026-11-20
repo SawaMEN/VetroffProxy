@@ -498,12 +498,7 @@ func main() {
 		if *padding && *adaptivePadding {
 			log.Fatal("choose either --padding or --adaptive-padding")
 		}
-		if err := stealth.ValidateFragmentation(*adaptiveFragmentation, *adaptivePadding); err != nil {
-			log.Fatal(err)
-		}
-		if err := stealth.ValidateTrafficShaping(*trafficShaping, *adaptivePadding); err != nil {
-			log.Fatal(err)
-		}
+
 		if err := stealth.ValidateTimingJitter(*timingJitter, *adaptivePadding); err != nil {
 			log.Fatal(err)
 		}
