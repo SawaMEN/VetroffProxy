@@ -72,8 +72,11 @@ duplicates, CR/LF/control bytes and uppercase tokens are invalid.
 | padding-adaptive-v1 | continuous bounded frame padding; requires AdaptivePadding |
 
 Strict reference clients require tcp for TCP requests, adding
-padding-initial-v1 when enabled; UDP requests require their exact UDP mode.
-The independent padding request/echo remains mandatory when padding is selected.
+padding-initial-v1 or padding-adaptive-v1 when that mode is selected;
+UDP requests require their exact UDP mode. The independent padding
+request/echo remains mandatory when padding is selected. Local timing
+jitter and adaptive fragmentation do not change the framed adaptive-v1
+wire format and require no additional capability token.
 
 ## Responses and errors
 
