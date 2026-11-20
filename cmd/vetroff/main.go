@@ -20,6 +20,7 @@ import (
 	"github.com/SawaMEN/VetroffProxy/internal/contract"
 	"github.com/SawaMEN/VetroffProxy/internal/egress"
 	"github.com/SawaMEN/VetroffProxy/internal/profile"
+	"github.com/SawaMEN/VetroffProxy/internal/stealth"
 	"github.com/SawaMEN/VetroffProxy/internal/tlsidentity"
 	"github.com/SawaMEN/VetroffProxy/internal/transportengine"
 	"github.com/SawaMEN/VetroffProxy/internal/tunnel"
@@ -88,6 +89,7 @@ func main() {
 		web := fs.String("web-root", "", i18n.Text("public website directory for ordinary requests and rejected probes"))
 		enableUDP := fs.Bool("enable-udp", false, i18n.Text("experimental SOCKS5 UDP request/response relay on generated server"))
 		adaptivePadding := fs.Bool("adaptive-padding", false, "enable adaptive padding in generated single-node strict client/server profiles")
+		timingJitter := fs.Duration("timing-jitter", 0, "optional delay for short adaptive frames (0..5ms); requires --adaptive-padding")
 		i18n.Parse(fs, os.Args[2:])
 		wirePolicy, err := contract.ParseProtocolPolicy(*protocolPolicy)
 		if err != nil {
@@ -96,7 +98,10 @@ func main() {
 		if *adaptivePadding && wirePolicy != contract.ProtocolStrict {
 			log.Fatal("--adaptive-padding setup requires --protocol-policy strict (single-node profile)")
 		}
-		if err := bootstrap.Generate(bootstrap.Options{AdaptivePadding: *adaptivePadding, ProtocolPolicy: wirePolicy, Server: *server, Certificate: *cert, PrivateKey: *key, Output: *out, SNI: *sni, CACertFile: *ca, JoinLinkFile: *join, UpstreamCAFile: *upstreamCA, WebRoot: *web, TLSBackend: *backend, Transport: *transport, XHTTPPath: *xhttpPath, XHTTPHost: *xhttpHost, EnableUDP: *enableUDP}); err != nil {
+		if err := stealth.ValidateTimingJitter(*timingJitter, *adaptivePadding); err != nil {
+			log.Fatal(err)
+		}
+		if err := bootstrap.Generate(bootstrap.Options{AdaptivePadding: *adaptivePadding, TimingJitter: *timingJitter, ProtocolPolicy: wirePolicy, Server: *server, Certificate: *cert, PrivateKey: *key, Output: *out, SNI: *sni, CACertFile: *ca, JoinLinkFile: *join, UpstreamCAFile: *upstreamCA, WebRoot: *web, TLSBackend: *backend, Transport: *transport, XHTTPPath: *xhttpPath, XHTTPHost: *xhttpHost, EnableUDP: *enableUDP}); err != nil {
 			log.Fatal(i18n.Text(err.Error()))
 		}
 		fmt.Println(i18n.Text("configuration created: server.json, connection.txt and node.json (secrets not printed)"))
@@ -127,6 +132,7 @@ func main() {
 		key := fs.String("key", "", i18n.Text("TLS private key PEM"))
 		padding := fs.Bool("padding", false, i18n.Text("enable experimental negotiated initial-record padding"))
 		adaptivePadding := fs.Bool("adaptive-padding", false, "enable experimental negotiated adaptive-v1 continuous padding")
+		timingJitter := fs.Duration("timing-jitter", 0, "max delay for small adaptive downlink records (0..5ms)")
 		egressProxy := fs.String("egress-proxy", "", "SOCKS5 exit for all destination TCP/UDP; numeric proxy IP:port, no direct fallback")
 		egressDNS := fs.String("egress-dns", "", "numeric DNS IP:port through the SOCKS5 exit (default 1.1.1.1:53)")
 		bondHub := fs.Bool("bond-hub", false, i18n.Text("enable common exit for bonded streams"))
@@ -166,12 +172,19 @@ func main() {
 			*h3Listen = config.H3Listen
 			*enableUDP = config.EnableUDP
 			*adaptivePadding = config.AdaptivePadding
+			*timingJitter, err = stealth.ParseTimingJitter(config.TimingJitter, config.AdaptivePadding)
+			if err != nil {
+				log.Fatal(err)
+			}
 			*xhttpPath, *xhttpHost = config.XHTTPPath, config.XHTTPHost
 			*webRoot, *clusterFile = config.WebRoot, config.ClusterFile
 			*bondHub, *bondRelay, *bondCA = config.BondHub, config.BondUpstream, config.BondCA
 			*bondSNI, *bondPin = config.BondSNI, config.BondPin
 			*maxTunnels, *maxConnections = config.MaxTunnels, config.MaxConnections
 			wirePolicy = config.ProtocolPolicy
+		}
+		if err := stealth.ValidateTimingJitter(*timingJitter, *adaptivePadding); err != nil {
+			log.Fatal(err)
 		}
 		if wirePolicy == contract.ProtocolStrict && (*bondHub || *bondRelay != "" || *clusterFile != "") {
 			log.Fatal("strict protocol policy is not supported with bond/discovery")
@@ -228,7 +241,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		handler := &tunnel.Server{Egress: exit, RequireProtocolNegotiation: wirePolicy == contract.ProtocolStrict, Access: controller, BondRelayOnly: controller != nil && *bondRelay != "", XHTTPSettings: carrierSettings, Username: user, Password: password, AllowPrivate: *allowPrivate, EnableUDP: *enableUDP, Cover: cover, Padding: *padding, AdaptivePadding: *adaptivePadding, MaxTunnels: *maxTunnels}
+		handler := &tunnel.Server{Egress: exit, RequireProtocolNegotiation: wirePolicy == contract.ProtocolStrict, Access: controller, BondRelayOnly: controller != nil && *bondRelay != "", XHTTPSettings: carrierSettings, Username: user, Password: password, AllowPrivate: *allowPrivate, EnableUDP: *enableUDP, Cover: cover, Padding: *padding, AdaptivePadding: *adaptivePadding, TimingJitter: *timingJitter, MaxTunnels: *maxTunnels}
 		if *bondHub {
 			hub := handler.NewBondHub()
 			defer hub.Close()
@@ -354,6 +367,7 @@ func main() {
 		attemptTimeout := fs.Duration("fallback-attempt-timeout", 5*time.Second, i18n.Text("setup time per endpoint when fallbacks are configured"))
 		padding := fs.Bool("padding", false, i18n.Text("require experimental initial-record padding (server must enable it)"))
 		adaptivePadding := fs.Bool("adaptive-padding", false, "require adaptive-v1 continuous padding (server must enable it)")
+		timingJitter := fs.Duration("timing-jitter", 0, "max delay for small adaptive uplink records (0..5ms)")
 		neckoBundle := fs.String("necko-bundle", "", "verified Necko bundle directory (with --engine necko)")
 		browserProfile := new(string)
 		if os.Args[1] == "client" {
@@ -451,12 +465,19 @@ func main() {
 			*bondPipeline = imported.Pipeline
 			*padding = imported.Padding
 			*adaptivePadding = imported.AdaptivePadding
+			*timingJitter, importErr = stealth.ParseTimingJitter(imported.TimingJitter, imported.AdaptivePadding)
+			if importErr != nil {
+				log.Fatal(importErr)
+			}
 			*connectTimeout, _ = time.ParseDuration(imported.ConnectTimeout)
 			*attemptTimeout, _ = time.ParseDuration(imported.AttemptTimeout)
 			wirePolicy = imported.ProtocolPolicy
 		}
 		if *padding && *adaptivePadding {
 			log.Fatal("choose either --padding or --adaptive-padding")
+		}
+		if err := stealth.ValidateTimingJitter(*timingJitter, *adaptivePadding); err != nil {
+			log.Fatal(err)
 		}
 		if wirePolicy == contract.ProtocolStrict && (*bonded || *discover) {
 			log.Fatal("strict protocol policy is not supported with bond/discovery")
@@ -465,7 +486,7 @@ func main() {
 			if user == "" || password == "" {
 				log.Fatal(i18n.Text("set VETROFF_USER and VETROFF_PASSWORD (nonempty)"))
 			}
-			exported, err := profile.Encode(profile.Config{ProtocolPolicy: wirePolicy, Version: 1, Servers: append([]string{*server}, fallbacks...), Username: user, Password: password, TLSBackend: *tlsBackend, Transport: *nativeTransport, XHTTPPath: *xhttpPath, XHTTPHost: *xhttpHost, SNI: *sni, PinSHA256: *pin, Encryption: *encryption, Balance: *balance, Bond: *bonded, Discover: *discover, Pipeline: *bondPipeline, Padding: *padding, AdaptivePadding: *adaptivePadding, ConnectTimeout: connectTimeout.String(), AttemptTimeout: attemptTimeout.String()})
+			exported, err := profile.Encode(profile.Config{ProtocolPolicy: wirePolicy, Version: 1, Servers: append([]string{*server}, fallbacks...), Username: user, Password: password, TLSBackend: *tlsBackend, Transport: *nativeTransport, XHTTPPath: *xhttpPath, XHTTPHost: *xhttpHost, SNI: *sni, PinSHA256: *pin, Encryption: *encryption, Balance: *balance, Bond: *bonded, Discover: *discover, Pipeline: *bondPipeline, Padding: *padding, AdaptivePadding: *adaptivePadding, TimingJitter: stealth.FormatTimingJitter(*timingJitter), ConnectTimeout: connectTimeout.String(), AttemptTimeout: attemptTimeout.String()})
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -629,6 +650,7 @@ func main() {
 		client.ConnectTimeout = *connectTimeout
 		client.Padding = *padding
 		client.AdaptivePadding = *adaptivePadding
+		client.TimingJitter = *timingJitter
 		switch *bondPipeline {
 		case "auto":
 		case "4":
