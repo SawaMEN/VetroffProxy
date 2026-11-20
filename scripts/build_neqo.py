@@ -15,6 +15,7 @@ import shlex
 import shutil
 import subprocess
 import tomllib
+import urllib.error
 import urllib.request
 
 import mozilla_runtime
@@ -28,23 +29,47 @@ def run(args, **kwargs):
     return subprocess.run([str(a) for a in args], check=True, **kwargs)
 
 
+# All candidates resolve to the same hash-pinned Ubuntu NSPR package.
+# Some GitHub-hosted runners receive 403 from archive.ubuntu.com. The
+# checksum is enforced on every mirror; mirrors cannot alter the pin.
+NSPR_PACKAGE = '/pool/main/n/nspr/libnspr4-dev_4.39-1ubuntu1_amd64.deb'
+NSPR_MIRRORS = (
+    'https://mirrors.edge.kernel.org/ubuntu',
+    'https://ftp.funet.fi/pub/mirrors/ubuntu',
+    'https://mirror.linux.duke.edu/pub/ubuntu/ubuntu',
+)
+
+
 def download(url, destination, expected):
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists() and mozilla_runtime.digest(destination) == expected:
         return
+    sources = [url]
+    if url == 'https://archive.ubuntu.com/ubuntu' + NSPR_PACKAGE:
+        sources.extend(mirror + NSPR_PACKAGE for mirror in NSPR_MIRRORS)
     temp = destination.with_suffix('.part')
-    try:
-        with urllib.request.urlopen(url, timeout=120) as src, temp.open('wb') as dst:
-            total = 0
-            while data := src.read(1 << 20):
-                total += len(data)
-                if total > 16 << 20:
-                    raise ValueError('NSPR headers exceed download bound')
-                dst.write(data)
-        mozilla_runtime.check_hash(temp, expected)
-        os.replace(temp, destination)
-    finally:
-        temp.unlink(missing_ok=True)
+    last_error = None
+    for source in sources:
+        try:
+            request = urllib.request.Request(source, headers={'User-Agent': 'VetroffProxy-pinned-build/1'})
+            with urllib.request.urlopen(request, timeout=120) as src, temp.open('wb') as dst:
+                total = 0
+                while data := src.read(1 << 20):
+                    total += len(data)
+                    if total > 16 << 20:
+                        raise ValueError('NSPR headers exceed download bound')
+                    dst.write(data)
+            # Do not retry a checksum mismatch: it is a supply-chain
+            # integrity failure, not a transient mirror connectivity error.
+            mozilla_runtime.check_hash(temp, expected)
+            os.replace(temp, destination)
+            return
+        except urllib.error.URLError as exc:
+            last_error = exc
+        finally:
+            temp.unlink(missing_ok=True)
+    if last_error is not None:
+        raise RuntimeError('all pinned NSPR archive sources are unavailable') from last_error
 
 
 def validate_lock(lock):
