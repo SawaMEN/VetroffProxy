@@ -30,6 +30,9 @@ const HTTP2ReceiveFirefox158 = h2profile.Firefox158
 // TLSClientFirefox158 opts into measured preferences on pinned NSS 3.130.
 const TLSClientFirefox158 = nsstls.Firefox158
 
+// BrowserProfileFirefox158 opts into the pinned NSS+H2 preferences, H2 only.
+const BrowserProfileFirefox158 = transportengine.BrowserFirefox158
+
 // ErrProtocolNegotiation identifies missing or incompatible wire confirmation.
 var ErrProtocolNegotiation = tunnel.ErrProtocolNegotiation
 
@@ -53,6 +56,7 @@ type ClientConfig struct {
 	Credentials            Credentials
 	CACertFile             string
 	Engine                 string // Empty/builtin preserves old selection; auto uses Necko when compatible, otherwise NSS/Neqo or Go; mozilla and necko force a backend.
+	BrowserProfile         string // Experimental local TLS/H2 preset: firefox-158; requires NSS, fails closed.
 	TLSBackend             string // Empty selects auto (NSS for TCP if available, Go for default H3); Neqo uses NSS.
 	Transport              string // Empty selects h2-connect.
 	QUICBackend            string // Empty/quic-go preserves the default; neqo is an opt-in build.
@@ -123,6 +127,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 	}()
 	plan, err := transportengine.Resolve(transportengine.Config{
 		Engine: config.Engine, Transport: config.Transport, NeckoBundle: config.NeckoBundle,
+		BrowserProfile: config.BrowserProfile,
 		AutoNeckoExcluded: ((config.RequireProtocolNegotiation || config.Padding || config.AdaptivePadding) && !transportengine.NativeHTTPHeaders(config.Transport)),
 		TLSBackend:        config.TLSBackend, QUICBackend: config.QUICBackend,
 		H3Fallback: config.H3Fallback, QUICHandshakeTimeout: config.QUICHandshakeTimeout,
