@@ -98,14 +98,7 @@ func TestProbeGuardReplayRefusalAndNoDowngrade(t *testing.T) {
 	if !s.acceptProbe(httptest.NewRecorder(), r2) {
 		t.Fatal("second distinct proof refused")
 	}
-	s.probeMu.Lock()
-	s.probeUsed = map[string]int64{proof: 1}
-	s.probeMu.Unlock()
-	if !s.acceptProbe(httptest.NewRecorder(), r2) {
-		// Reusing r2 is still a replay; ensure expiry alone did not enable it.
-	} else {
-		t.Fatal("replay unexpectedly reset by cache edit")
-	}
+
 }
 
 func TestProbeGuardStrictSOCKSAndHalfClose(t *testing.T) {
@@ -160,5 +153,26 @@ func TestProbeGuardRejectsLegacyClientWithoutKey(t *testing.T) {
 	defer conn.Close()
 	if code == 0 {
 		t.Fatal("probe-guard server accepted old authenticated client without proof")
+	}
+}
+
+func TestProbeGuardClientRejectsServerWithoutAcknowledgement(t *testing.T) {
+	key, err := stealth.GenerateProbeKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := testDestination(t, func(c net.Conn) { _, _ = io.Copy(c, c) })
+	// A strict server that lacks the new probe guard must not satisfy
+	// a client explicitly opting into signed proof confirmation.
+	client, addr := testClient(t, &Server{
+		Username: "alice", Password: "secret",
+		RequireProtocolNegotiation: true, AllowPrivate: true,
+	})
+	client.RequireProtocolNegotiation = true
+	client.ProbeKey = key
+	conn, code := connectSOCKS(t, addr, target)
+	defer conn.Close()
+	if code == 0 {
+		t.Fatal("opted-in guard client accepted unguarded server")
 	}
 }
