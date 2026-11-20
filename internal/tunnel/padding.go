@@ -158,16 +158,16 @@ var paddingBuffers = sync.Pool{New: func() any { return new([paddingBufferSize]b
 // in adaptive-v1. It has one writer, just like the H2 stream.
 // A failed write is terminal: retrying a partially emitted frame is unsafe.
 type paddingWriter struct {
-	writer   io.Writer
-	records  int
-	adaptive bool
-	ctx      context.Context
-	jitter   time.Duration
-	fragment bool
-	shaping  bool
+	writer       io.Writer
+	records      int
+	adaptive     bool
+	ctx          context.Context
+	jitter       time.Duration
+	fragment     bool
+	shaping      bool
 	shapePayload uint64
 	shapePadding uint64
-	err      error
+	err          error
 }
 
 func newPaddingWriter(w io.Writer) *paddingWriter {

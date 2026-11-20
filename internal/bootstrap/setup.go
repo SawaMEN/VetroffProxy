@@ -60,7 +60,7 @@ type Options struct {
 	ProtocolPolicy                                                                                  contract.ProtocolPolicy
 	Server, Certificate, PrivateKey, Output, SNI, CACertFile, JoinLinkFile, UpstreamCAFile, WebRoot string
 	TLSBackend, Transport, XHTTPPath, XHTTPHost                                                     string
-	EnableUDP, AdaptivePadding, AdaptiveFragmentation, TrafficShaping                              bool
+	EnableUDP, AdaptivePadding, AdaptiveFragmentation, TrafficShaping                               bool
 	TimingJitter                                                                                    time.Duration
 }
 
