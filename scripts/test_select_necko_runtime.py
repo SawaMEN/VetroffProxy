@@ -28,6 +28,16 @@ class SelectorTests(unittest.TestCase):
                               dict(name='necko-source-provenance')]):
             self.assertEqual(matching_run(runs, {}, lambda _: {}, lambda _: artifacts), (None, False))
 
+    def test_both_architectures_require_a_common_run(self):
+        runs = [dict(id=2, head_sha='new', status='completed'),
+                dict(id=1, head_sha='old', status='completed')]
+        amd64 = [dict(name='necko-linux-amd64-runtime'), dict(name='necko-source-provenance')]
+        arm64 = [dict(name='necko-linux-arm64-runtime'), dict(name='necko-source-provenance-arm64')]
+        artifacts = {1: amd64, 2: arm64}
+        self.assertEqual(matching_run(runs, {}, lambda _: {}, artifacts.get, 'both'), (None, False))
+        artifacts[1] = amd64 + arm64
+        self.assertEqual(matching_run(runs, {}, lambda _: {}, artifacts.get, 'both'), (1, False))
+
 
 if __name__ == '__main__':
     unittest.main()

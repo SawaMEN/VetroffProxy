@@ -107,6 +107,21 @@ class NeqoBuildIntegrity(unittest.TestCase):
             self.assertFalse(target.exists())
             self.assertFalse(target.with_suffix('.part').exists())
 
+    def test_pinned_nspr_retries_interrupted_response_body(self):
+        url = 'https://archive.ubuntu.com/ubuntu' + build_neqo.NSPR_PACKAGE
+        data = b'hash-pinned NSPR fixture'
+        expected = hashlib.sha256(data).hexdigest()
+        for error in (TimeoutError('read timeout'), build_neqo.http.client.IncompleteRead(b'')):
+            with self.subTest(error=type(error).__name__), tempfile.TemporaryDirectory() as tmp:
+                target = Path(tmp) / 'headers.deb'
+                with mock.MagicMock() as response:
+                    response.__enter__.return_value.read.side_effect = [b'partial', error]
+                    with mock.patch('urllib.request.urlopen', side_effect=[response, io.BytesIO(data)]) as fetch:
+                        build_neqo.download(url, target, expected)
+                self.assertEqual(target.read_bytes(), data)
+                self.assertEqual(fetch.call_count, 2)
+                self.assertFalse(target.with_suffix('.part').exists())
+
     @unittest.skipUnless(all(shutil.which(tool) for tool in ('cc', 'ar', 'objcopy', 'readelf')),
                          'requires a compiler and binutils')
     def test_cgo_archive_removes_bitcode_metadata_and_retains_native_code(self):

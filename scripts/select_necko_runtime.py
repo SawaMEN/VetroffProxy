@@ -15,16 +15,20 @@ import time
 
 
 def matching_run(runs, expected, source_for_sha, artifacts_for_run, arch='amd64'):
-    if arch not in ('amd64', 'arm64'):
+    if arch not in ('amd64', 'arm64', 'both'):
         raise ValueError('unsupported runtime architecture')
-    suffix = '' if arch == 'amd64' else '-arm64'
+    required = set()
+    if arch in ('amd64', 'both'):
+        required.update(('necko-linux-amd64-runtime', 'necko-source-provenance'))
+    if arch in ('arm64', 'both'):
+        required.update(('necko-linux-arm64-runtime', 'necko-source-provenance-arm64'))
     waiting = False
     for run in runs:
         if source_for_sha(run['head_sha']) != expected:
             continue
         artifacts = artifacts_for_run(run['id'])
         names = {a['name'] for a in artifacts if not a.get('expired')}
-        if {f'necko-linux-{arch}-runtime', 'necko-source-provenance' + suffix} <= names:
+        if required <= names:
             return run['id'], waiting
         if run['status'] != 'completed':
             waiting = True
@@ -33,11 +37,12 @@ def matching_run(runs, expected, source_for_sha, artifacts_for_run, arch='amd64'
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--arch', choices=('amd64', 'arm64'), default='amd64')
+    parser.add_argument('--arch', choices=('amd64', 'arm64', 'both'), default='amd64')
     parser.add_argument('--repo', default=os.environ.get('GITHUB_REPOSITORY'))
     parser.add_argument('--lock', type=Path, default=Path('experiments/firefox-necko/gecko.lock.json'))
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--wait-seconds', type=int, default=10800)
+    parser.add_argument('--allow-missing', action='store_true')
     args = parser.parse_args()
     if not args.repo or len(args.repo.split('/')) != 2:
         parser.error('repository must be owner/name')
@@ -66,15 +71,20 @@ def main():
         runs = []
         for workflow in ('necko-experiment.yml', 'release.yml'):
             runs.extend(api(f'actions/workflows/{workflow}/runs?per_page=100')['workflow_runs'])
+        runs.extend(api('actions/workflows/necko-runtime-test.yml/runs?per_page=30&branch=main&status=completed')['workflow_runs'])
         runs.sort(key=lambda run: run['id'], reverse=True)
         run, waiting = matching_run(runs, expected, source,
                                    lambda run_id: api(f'actions/runs/{run_id}/artifacts')['artifacts'], args.arch)
-        if run is not None:
+        expired = time.monotonic() >= deadline or (not waiting and time.monotonic() >= discovery_deadline)
+        if run is not None or (expired and args.allow_missing):
             with args.output.open('a') as output:
-                output.write(f'run_id={run}\n')
-            print('Selected compiled runtime run', run)
+                output.write(f'run_id={run or 0}\n')
+            if run is None:
+                print('No matching complete Gecko build; cold source build required')
+            else:
+                print('Selected compiled runtime run', run)
             return
-        if time.monotonic() >= deadline or (not waiting and time.monotonic() >= discovery_deadline):
+        if expired:
             raise SystemExit('No compiled runtime matches the source lock; inspect the source build.')
         print('Waiting for compilation of the matching native source lock', flush=True)
         time.sleep(30)

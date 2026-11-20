@@ -54,7 +54,28 @@ concurrency:
   group: necko-runtime-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  source-lookup:
+    # Main has no standalone source build. Reuse a compatible artifact when
+    # possible, including a cold build from an earlier runtime-gate run.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.source_run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      run_id: ${{ steps.source.outputs.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Look up both compiled architectures
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/select_necko_runtime.py --arch both --wait-seconds 0 --allow-missing --output "$GITHUB_OUTPUT"
+  native-source:
+    needs: source-lookup
+    if: needs.source-lookup.outputs.run_id == '0'
+    uses: ./.github/workflows/necko-experiment.yml
   runtime:
+    needs: [source-lookup, native-source]
+    if: ${{ !cancelled() && (needs.source-lookup.result == 'skipped' || (needs.source-lookup.result == 'success' && (needs.source-lookup.outputs.run_id != '0' || needs.native-source.result == 'success'))) }}
     name: runtime (${{ matrix.arch }})
     strategy:
       fail-fast: false
@@ -74,7 +95,7 @@ jobs:
         id: source
         env:
           GH_TOKEN: ${{ github.token }}
-          REQUESTED_RUN: ${{ inputs.source_run }}
+          REQUESTED_RUN: ${{ inputs.source_run || (needs.native-source.result == 'success' && github.run_id) || needs.source-lookup.outputs.run_id }}
         run: |
           if [ -n "$REQUESTED_RUN" ]; then
             if ! [[ "$REQUESTED_RUN" =~ ^[0-9]+$ ]]; then

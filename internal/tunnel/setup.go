@@ -175,7 +175,7 @@ func (c *Client) openTunnel(ctx context.Context, target string) (stream *openStr
 		if terminalSetupError(err) {
 			return nil, err
 		}
-		if timedOut && !answered {
+		if timedOut {
 			if err != nil && !errors.Is(err, context.Canceled) && !retryableSetupError(err) {
 				return nil, err
 			}

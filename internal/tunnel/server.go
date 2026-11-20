@@ -81,7 +81,11 @@ type Server struct {
 }
 
 func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
-	if protocolRequest(r) && s.authorized(r) {
+	if !s.authorized(r) {
+		s.cover(w, r)
+		return
+	}
+	if protocolRequest(r) {
 		if s.ProbeKey != "" && !s.acceptProbe(w, r) {
 			s.cover(w, r)
 			return
@@ -91,22 +95,22 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	settings, settingsErr := xhttp.Normalize(s.XHTTPSettings.Path, s.XHTTPSettings.Host)
-	if settingsErr == nil && xhttp.MatchesAt(r, settings) && r.ProtoMajor == 2 && s.authorized(r) {
+	if settingsErr == nil && r.ProtoMajor == 2 && xhttp.MatchesAt(r, settings) {
 		s.serveXHTTP(w, r)
 		return
 	}
-	if r.Method == http.MethodGet && r.ProtoMajor == 1 && r.TLS != nil && r.URL.Path == wsPath && s.authorized(r) {
+	if r.Method == http.MethodGet && r.ProtoMajor == 1 && r.TLS != nil && r.URL.Path == wsPath {
 		s.serveWSS(w, r)
 		return
 	}
-	if r.Method == http.MethodPost && (r.ProtoMajor == 2 || r.ProtoMajor == 3) && r.URL.Path == postPath && s.authorized(r) {
+	if r.Method == http.MethodPost && (r.ProtoMajor == 2 || r.ProtoMajor == 3) && r.URL.Path == postPath {
 		r = r.Clone(r.Context())
 		r.Method = http.MethodConnect
 		r.Host = r.Header.Get(targetHeader)
 		r.Header.Del(targetHeader)
 	}
 
-	if s.Cluster != nil && r.Method == http.MethodGet && (r.ProtoMajor == 2 || r.ProtoMajor == 3) && r.URL.Path == cluster.Path && s.authorized(r) {
+	if s.Cluster != nil && r.Method == http.MethodGet && (r.ProtoMajor == 2 || r.ProtoMajor == 3) && r.URL.Path == cluster.Path {
 		if !s.acquireTunnel() {
 			http.Error(w, "server busy", http.StatusServiceUnavailable)
 			return
@@ -115,7 +119,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		s.Cluster.ServeHTTP(w, r)
 		return
 	}
-	if s.Bond != nil && r.Method == http.MethodPost && (r.ProtoMajor == 2 || r.ProtoMajor == 3) && r.URL.Path == bond.Path && s.authorized(r) {
+	if s.Bond != nil && r.Method == http.MethodPost && (r.ProtoMajor == 2 || r.ProtoMajor == 3) && r.URL.Path == bond.Path {
 		if !s.acquireTunnel() {
 			http.Error(w, "server busy", http.StatusServiceUnavailable)
 			return
@@ -129,18 +133,16 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.EnableUDP && r.Method == http.MethodPost && r.URL.Path == udpPath &&
-		(r.ProtoMajor == 2 || r.ProtoMajor == 3) && s.authorized(r) {
+		(r.ProtoMajor == 2 || r.ProtoMajor == 3) {
 		s.serveUDP(w, r)
 		return
 	}
 	if s.EnableUDP && r.Method == http.MethodPost && r.URL.Path == udpStreamPath &&
-		(r.ProtoMajor == 2 || r.ProtoMajor == 3) && s.authorized(r) {
+		(r.ProtoMajor == 2 || r.ProtoMajor == 3) {
 		s.serveUDPStream(w, r)
 		return
 	}
-	// Select the tunnel only after authentication; rejected requests use the
-	// same handler as the public website and never dial a destination.
-	if r.Method != http.MethodConnect || (r.ProtoMajor != 2 && r.ProtoMajor != 3) || !s.authorized(r) {
+	if r.Method != http.MethodConnect || (r.ProtoMajor != 2 && r.ProtoMajor != 3) {
 		s.cover(w, r)
 		return
 	}
