@@ -147,7 +147,7 @@ jobs:
           exit "$result"
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
       - name: FX buffer and fingerprint audit unit regressions
         run: |
           node --test experiments/firefox-necko/client_test.cjs
