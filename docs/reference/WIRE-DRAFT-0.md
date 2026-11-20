@@ -94,6 +94,130 @@ malformed framed data as unpadded traffic. Before eight records, clean EOF at a
 record boundary is permitted. The decoder does not expose padding. This framing
 is inside encrypted transport and is not a Firefox traffic profile.
 
+## Optional adaptive-v1 TCP padding (Stealth stage 1)
+
+Client requests `X-Vetroff-Padding: adaptive-v1` and the server must echo the
+identical value on a successful authenticated CONNECT. Unrecognized, absent or
+duplicate confirmation is terminal; a client must never silently downgrade.
+The server must explicitly enable adaptive support. The capability token
+`padding-adaptive-v1` can be required through strict version negotiation.
+This is an additive optional framing mode: `initial-v1` remains unchanged.
+
+Each direction independently frames **every** nonempty record, including after
+the eighth, without a raw tail. A frame has a 2-byte big-endian payload length
+(1..16384), a 1-byte padding length, then the payload and that many zero-fill
+padding bytes. Maximum legal padding for a record with N payload bytes is
+`min(255, 24 + floor(N/8))`. The writer chooses a random length within that
+bound. A reader rejects zero/oversize lengths, excessive padding, truncated
+headers and bodies without forwarding the malformed payload. Clean EOF at a
+record boundary is a normal half-close. There are no standalone padding frames.
+
+This limits *per-record* overhead, but it can still be substantial for very
+small writes; it does not impose a total connection bandwidth budget. Framing
+changes the byte stream delivered inside authenticated HTTPS and can indirectly
+change network packet sizes; it neither modifies TLS/QUIC packets directly nor
+establishes browser fingerprint equivalence or TSPU bypass. Both peers must
+support the mode, and UDP relays, Bond and discovery are not padded by it.
+
+
+### Optional local timing jitter
+
+An implementation MAY insert a short, cancellable delay before writing small
+adaptive-v1 frames (payload <=256 bytes). This is a local policy, **not** an
+additional wire capability, header, packet type or negotiation field. The
+supported configurable maximum is 5ms per qualifying record; records over
+256 bytes are never artificially delayed by this feature. A zero setting
+preserves existing behavior, and peer endpoints may configure delays
+independently. Cancellation must interrupt a pending delay before emission.
+Implementations must not attach extra bytes outside the authenticated HTTP
+stream. This remains experimental: delay changes do not prove DPI resistance.
+
+### Optional local adaptive fragmentation (Stealth stage 4)
+
+A sender MAY split large application writes into multiple ordinary
+`adaptive-v1` frames. With the opt-in `adaptive_fragmentation` setting,
+a write with more than 4096 bytes remaining picks each next payload
+length between **1024 and 4096** bytes using a fresh random draw. Its
+final remainder of at most 4096 bytes becomes a regular final frame;
+application writes of at most 4096 bytes are not split. Each resulting
+frame obeys the unchanged adaptive-v1 header, padding bound and
+zero-fill requirements. No padding-only or continuation frames exist.
+
+A peer implementing adaptive-v1 does **not** need the optional shaping
+policy to decode this stream, so there is no new wire version, header,
+capability or fallback. Either sender can enable it independently.
+The timing-jitter policy applies only to originally small application
+writes (at most 256 bytes), never to a small leftover fragment of a
+larger write.
+
+These are application/HTTP-stream boundaries, **not** IP fragmentation
+or direct TLS/QUIC record shaping. The actual HTTP transport and TCP
+stack may merge writes. Extra frames increase overhead and can impair
+throughput. No censorship/DPI bypass properties are established.
+
+
+### Optional bounded traffic shaping (Stealth stage 5)
+
+An adaptive-v1 sender MAY enable local `traffic_shaping` and vary only
+the zero-filled padding length of existing authenticated HTTPS frames.
+The sender tracks cumulative useful bytes U and cumulative zero-padding
+bytes P in a single direction and enforces **P <= floor(U/8)**.
+Every frame still uses the unchanged adaptive-v1 3-byte header and
+per-record upper bound of `min(255, 24 + floor(N/8))` padding bytes.
+The compulsory 3-byte frame headers are not included in this optional
+zero-padding budget.
+
+If possible within both limits, the writer extends each inner frame
+(including its three-byte header) to the next size class in
+`64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384`. Otherwise
+it selects bounded random padding using the available budget. No
+zero-payload frames, synthetic requests, keepalives, dummy streams
+or additional scheduling delays are introduced.
+
+A plain adaptive-v1 reader can decode every record unchanged. No new
+capability token, TLS fingerprint or version bump is required.
+Either direction MAY enable shaping independently. Adaptive fragmentation
+and timing jitter are separate policies, disabled by default.
+
+The budget excludes HTTP/2 or HTTP/3 framing, TLS records, TCP/IP
+headers and the mandatory internal record headers. Size classes do not
+guarantee any specific **on-wire TLS record or IP packet size**, and
+neither DPI bypass nor browser-equivalent traffic has been established.
+
+### Opt-in active probe guard (Stealth stage 6)
+
+A server MAY require a second, independently generated 256-bit key
+for each authenticated TCP/UDP proxy request under **strict protocol
+negotiation**. It does not replace TLS 1.3 or Basic/managed
+authorization. The request includes exactly one
+`X-Vetroff-Proof` with three dot-separated fields:
+`unix_seconds.base64url_12_random_bytes.base64url_HMAC_SHA256`.
+The HMAC input is
+`"VetroffProxy/probe-v1:" + unix_seconds + "." + nonce`
+using the 32-byte decoded shared key. The timestamp must be
+canonical decimal and within ±30 seconds of the server clock.
+The server rejects duplicate headers, invalid proof lengths, invalid
+signatures, reused tokens and out-of-window timestamps before any
+destination dialing. A bounded replay cache holds at most 4096
+accepted tokens; exhaustion fails closed. This replay cache is local
+to one server process and is not a distributed guarantee.
+
+When the proof was consumed successfully, the server returns exactly
+one `X-Vetroff-Proof-Accepted` header with base64url HMAC-SHA256
+over `"VetroffProxy/probe-accepted-v1:" + complete_request_proof`,
+using the same key. The client MUST require this confirmation on a
+successful TCP/UDP request when probe guard is configured. A missing,
+duplicate or incorrect confirmation is terminal and MUST NOT
+automatically downgrade to unguarded mode.
+
+Unauthenticated or unproven proxy requests are served by the same
+public cover handler as other ordinary requests; the public handler
+is not given any `X-Vetroff-*` or Proxy-Authorization headers.
+Compatible peers must both support the guard; the default server
+configuration still accepts existing strict clients without it.
+This does not provide stealth from someone who controls the key or
+the TLS termination point, and does not establish resistance to DPI.
+
 ## Application UDP relay
 
 UDP is opt-in on both ends and independent of the outer H3/QUIC transport.

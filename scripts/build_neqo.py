@@ -15,6 +15,7 @@ import shlex
 import shutil
 import subprocess
 import tomllib
+import urllib.error
 import urllib.request
 
 import mozilla_runtime
@@ -28,23 +29,47 @@ def run(args, **kwargs):
     return subprocess.run([str(a) for a in args], check=True, **kwargs)
 
 
+# All candidates resolve to the same hash-pinned Ubuntu NSPR package.
+# Some GitHub-hosted runners receive 403 from archive.ubuntu.com. The
+# checksum is enforced on every mirror; mirrors cannot alter the pin.
+NSPR_PACKAGE = '/pool/main/n/nspr/libnspr4-dev_4.39-1ubuntu1_amd64.deb'
+NSPR_MIRRORS = (
+    'https://mirrors.edge.kernel.org/ubuntu',
+    'https://ftp.funet.fi/pub/mirrors/ubuntu',
+    'https://mirror.linux.duke.edu/pub/ubuntu/ubuntu',
+)
+
+
 def download(url, destination, expected):
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists() and mozilla_runtime.digest(destination) == expected:
         return
+    sources = [url]
+    if url == 'https://archive.ubuntu.com/ubuntu' + NSPR_PACKAGE:
+        sources.extend(mirror + NSPR_PACKAGE for mirror in NSPR_MIRRORS)
     temp = destination.with_suffix('.part')
-    try:
-        with urllib.request.urlopen(url, timeout=120) as src, temp.open('wb') as dst:
-            total = 0
-            while data := src.read(1 << 20):
-                total += len(data)
-                if total > 16 << 20:
-                    raise ValueError('NSPR headers exceed download bound')
-                dst.write(data)
-        mozilla_runtime.check_hash(temp, expected)
-        os.replace(temp, destination)
-    finally:
-        temp.unlink(missing_ok=True)
+    last_error = None
+    for source in sources:
+        try:
+            request = urllib.request.Request(source, headers={'User-Agent': 'VetroffProxy-pinned-build/1'})
+            with urllib.request.urlopen(request, timeout=120) as src, temp.open('wb') as dst:
+                total = 0
+                while data := src.read(1 << 20):
+                    total += len(data)
+                    if total > 16 << 20:
+                        raise ValueError('NSPR headers exceed download bound')
+                    dst.write(data)
+            # Do not retry a checksum mismatch: it is a supply-chain
+            # integrity failure, not a transient mirror connectivity error.
+            mozilla_runtime.check_hash(temp, expected)
+            os.replace(temp, destination)
+            return
+        except urllib.error.URLError as exc:
+            last_error = exc
+        finally:
+            temp.unlink(missing_ok=True)
+    if last_error is not None:
+        raise RuntimeError('all pinned NSPR archive sources are unavailable') from last_error
 
 
 def validate_lock(lock):
@@ -189,6 +214,16 @@ def export_licenses(out, env):
     (out / 'rust-dependencies.json').write_text(json.dumps(dict(schema=1, packages=packages), indent=2) + '\n')
 
 
+
+def prepare_cgo_archive(source, destination):
+    # Rust's staticlib includes native objects with embedded LLVM bitcode
+    # from the prebuilt standard library, even with release LTO disabled.
+    # Keep the native code and archive symbols for Go's non-LTO cgo build.
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    run(['objcopy', '--remove-section=.llvmbc', '--remove-section=.llvmcmd',
+         source, destination])
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, default=CRATE / 'target/vetroff-build')
@@ -234,13 +269,15 @@ def main():
     # Go's TCP bridge also probes nspr independently via pkg-config.
     (pc / 'nspr.pc').write_text('Name: nspr\nDescription: VetroffProxy pinned Mozilla NSPR\nVersion: 4.39\nLibs: -L' + str(runtime / 'lib') + ' -lplds4 -lplc4 -lnspr4\nCflags: -I' + str(nspr) + '\n')
     if env.get('CARGO_TARGET_DIR'):
-        raise ValueError('unset CARGO_TARGET_DIR: the ABI link path is crate target/release')
+        raise ValueError('unset CARGO_TARGET_DIR: the Rust archive is read from crate target/release')
     prepare_patched_neqo(out, env, lock)
     run(['cargo', 'build', '--locked', '--release'], cwd=CRATE, env=env)
     export_licenses(out, env)
     # Go's build cache does not watch external static archives. A local C
     # header makes the Rust archive part of the cgo package's source hash.
-    archive_hash=mozilla_runtime.digest(CRATE / 'target/release/libvetroff_neqo.a')
+    cgo_archive = CRATE / 'target/cgo/libvetroff_neqo.a'
+    prepare_cgo_archive(CRATE / 'target/release/libvetroff_neqo.a', cgo_archive)
+    archive_hash = mozilla_runtime.digest(cgo_archive)
     (ROOT / 'internal/neqo/build_stamp.h').write_text('#define FT_NEQO_ARCHIVE_SHA256 "' + archive_hash + '"\n')
     selected = {key: env[key] for key in ['PKG_CONFIG_PATH', 'LD_LIBRARY_PATH', 'CGO_LDFLAGS', 'CARGO_HOME']}
     (out / 'env.sh').write_text(''.join('export ' + key + '=' + shlex.quote(value) + '\n' for key, value in selected.items()))

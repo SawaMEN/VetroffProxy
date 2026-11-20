@@ -69,17 +69,36 @@ duplicates, CR/LF/control bytes and uppercase tokens are invalid.
 | udp-v1 | one-shot relay; requires EnableUDP and a non-relay exit |
 | udp-stream-v2 | framed streaming relay; same opt-in requirement |
 | padding-initial-v1 | initial-eight-record padding; requires Padding |
+| padding-adaptive-v1 | continuous bounded frame padding; requires AdaptivePadding |
 
 Strict reference clients require tcp for TCP requests, adding
-padding-initial-v1 when enabled; UDP requests require their exact UDP mode.
-The independent padding request/echo remains mandatory when padding is selected.
+padding-initial-v1 or padding-adaptive-v1 when that mode is selected;
+UDP requests require their exact UDP mode. The independent padding
+request/echo remains mandatory when padding is selected. Local timing
+jitter and adaptive fragmentation do not change the framed adaptive-v1
+wire format and require no additional capability token.
+
+Local `traffic_shaping` uses the existing `padding-adaptive-v1`
+capability. It changes only the distribution of legal inner padding
+lengths and has no new header, token, or server negotiation field;
+peers may enable it independently, but each sending side must have
+adaptive padding enabled.
+
+Optional `probe_key` is a separate secret shared through the private
+connection profile and strict server configuration. Enabling it
+requires both peers to support `X-Vetroff-Proof` and its
+`X-Vetroff-Proof-Accepted` HMAC response. This is **not** the
+`padding-adaptive-v1` capability: probe guard is independent of
+padding. No silent fallback is allowed if the server omits proof
+confirmation. A public cover response must not expose authentication
+or probe headers.
 
 ## Responses and errors
 
 A compatible authenticated offer receives `X-Vetroff-Version` with the exact
 selected version and `X-Vetroff-Capabilities` listing enabled capabilities
 using the same list grammar. The list is deterministic: tcp, then udp-v1 and
-udp-stream-v2 if enabled, then padding-initial-v1 if enabled. Confirmation
+udp-stream-v2 if enabled, then padding-initial-v1 and padding-adaptive-v1 if enabled. Confirmation
 headers can accompany an application error; they do not imply target setup
 success. Clients require both successful route status and compatible headers.
 

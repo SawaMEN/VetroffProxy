@@ -123,10 +123,16 @@ func (c *Client) openTunnel(ctx context.Context, target string) (stream *openStr
 		}
 		req.Host = target
 		req.Header.Set("Proxy-Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(c.Username+":"+c.Password)))
-		if c.Padding {
-			req.Header.Set(paddingHeader, paddingVersion)
+		if mode := c.paddingMode(); mode != "" {
+			req.Header.Set(paddingHeader, mode)
 		}
-		c.requestProtocol(req, "tcp")
+		if err := c.requestProtocol(req, "tcp"); err != nil {
+			reader.Close()
+			writer.Close()
+			cancel()
+			release()
+			return nil, err
+		}
 		timer := time.AfterFunc(budget, func() { abort(context.DeadlineExceeded) })
 		resp, err := c.transport.RoundTrip(req)
 		timedOut := !timer.Stop()
@@ -135,9 +141,11 @@ func (c *Client) openTunnel(ctx context.Context, target string) (stream *openStr
 				err = &ConnectResponseError{HTTPMajor: resp.ProtoMajor, HTTPStatus: resp.StatusCode}
 			} else if protocolErr := c.verifyProtocol(resp, "tcp"); protocolErr != nil {
 				err = protocolErr
+			} else if probeErr := c.verifyProbeConfirmation(req, resp); probeErr != nil {
+				err = probeErr
 			} else {
-				negotiated, paddingErr := paddingRequested(resp.Header)
-				if paddingErr != nil || negotiated != c.Padding {
+				negotiated, paddingErr := paddingModeRequested(resp.Header)
+				if paddingErr != nil || negotiated != c.paddingMode() {
 					err = errors.New(i18n.Text("CONNECT padding negotiation failed"))
 				}
 			}

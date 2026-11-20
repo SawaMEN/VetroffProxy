@@ -11,6 +11,7 @@ import (
 	"github.com/SawaMEN/VetroffProxy/internal/cluster"
 	"github.com/SawaMEN/VetroffProxy/internal/egress"
 	"github.com/SawaMEN/VetroffProxy/internal/i18n"
+	"github.com/SawaMEN/VetroffProxy/internal/stealth"
 	"github.com/SawaMEN/VetroffProxy/internal/xhttp"
 	"io"
 	"net"
@@ -29,6 +30,11 @@ type Server struct {
 	// RequireProtocolNegotiation rejects authenticated builtin TCP/UDP requests.
 	// Outer WSS/XHTTP handshakes and cluster/bond extensions are separate.
 	RequireProtocolNegotiation bool
+	// ProbeKey requires a fresh HMAC proof on every authenticated TCP/UDP
+	// transport request. Empty keeps the existing cover/auth behavior.
+	ProbeKey  string
+	probeMu   sync.Mutex
+	probeUsed map[string]int64
 
 	// Access is mutually exclusive with builtin credentials; set before serving.
 	Access *access.Controller
@@ -44,6 +50,14 @@ type Server struct {
 	DialTimeout time.Duration
 	// Padding enables support for explicitly negotiated initial-v1 records.
 	Padding bool
+	// AdaptivePadding enables the optional adaptive-v1 framed CONNECT mode.
+	AdaptivePadding bool
+	// AdaptiveFragmentation varies inner adaptive-v1 downlink record sizes.
+	AdaptiveFragmentation bool
+	// TrafficShaping caps cumulative zero-fill padding on downlink frames.
+	TrafficShaping bool
+	// TimingJitter limits optional delays on small adaptive downlink records.
+	TimingJitter time.Duration
 	// MaxTunnels bounds authenticated dialing/relay work across this Server.
 	// Zero uses 256. Configure before serving and do not copy Server after use.
 	MaxTunnels int
@@ -67,8 +81,14 @@ type Server struct {
 }
 
 func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
-	if protocolRequest(r) && s.authorized(r) && !s.acceptProtocol(w, r) {
-		return
+	if protocolRequest(r) && s.authorized(r) {
+		if s.ProbeKey != "" && !s.acceptProbe(w, r) {
+			s.cover(w, r)
+			return
+		}
+		if !s.acceptProtocol(w, r) {
+			return
+		}
 	}
 	settings, settingsErr := xhttp.Normalize(s.XHTTPSettings.Path, s.XHTTPSettings.Host)
 	if settingsErr == nil && xhttp.MatchesAt(r, settings) && r.ProtoMajor == 2 && s.authorized(r) {
@@ -124,8 +144,9 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		s.cover(w, r)
 		return
 	}
-	padded, err := paddingRequested(r.Header)
-	if err != nil || (padded && !s.Padding) {
+	paddingMode, err := paddingModeRequested(r.Header)
+	if err != nil || (paddingMode == paddingVersion && !s.Padding) ||
+		(paddingMode == adaptivePaddingVersion && !s.AdaptivePadding) {
 		http.Error(w, "unsupported padding mode", http.StatusBadRequest)
 		return
 	}
@@ -156,8 +177,8 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	defer stopClose()
 
 	// HTTP/2 and HTTP/3 allow reading the request while streaming a response.
-	if padded {
-		w.Header().Set(paddingHeader, paddingVersion)
+	if paddingMode != "" {
+		w.Header().Set(paddingHeader, paddingMode)
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.WriteHeader(http.StatusOK)
@@ -169,9 +190,13 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var incoming io.Reader = r.Body
 	var outgoing io.Writer = flushingWriter{w: w, flusher: f}
-	if padded {
+	switch paddingMode {
+	case paddingVersion:
 		incoming = newPaddingReader(r.Body)
 		outgoing = newPaddingWriter(outgoing)
+	case adaptivePaddingVersion:
+		incoming = newAdaptivePaddingReader(r.Body)
+		outgoing = newShapedAdaptivePaddingWriter(outgoing, r.Context(), s.TimingJitter, s.AdaptiveFragmentation, s.TrafficShaping)
 	}
 	incomingDone := make(chan struct{})
 	go func() {
@@ -198,6 +223,45 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		// stack, after the destination and upload worker have been released.
 		panic(http.ErrAbortHandler)
 	}
+}
+
+// acceptProbe consumes an authenticated proof exactly once. The fixed-size
+// cache refuses new proofs when full rather than evicting live replay entries.
+func (s *Server) acceptProbe(w http.ResponseWriter, r *http.Request) bool {
+	proof, present, valid := protocolValue(r.Header, stealth.ProbeHeader)
+	if !valid || !present {
+		return false
+	}
+	stamp, ok := stealth.VerifyProbeProof(s.ProbeKey, proof, time.Now())
+	if !ok {
+		return false
+	}
+	s.probeMu.Lock()
+	defer s.probeMu.Unlock()
+	if s.probeUsed == nil {
+		s.probeUsed = make(map[string]int64)
+	}
+	if _, exists := s.probeUsed[proof]; exists {
+		return false
+	}
+	if len(s.probeUsed) >= stealth.MaxProbeCache {
+		now := time.Now().Unix()
+		for token, expiry := range s.probeUsed {
+			if expiry < now {
+				delete(s.probeUsed, token)
+			}
+		}
+		if len(s.probeUsed) >= stealth.MaxProbeCache {
+			return false
+		}
+	}
+	s.probeUsed[proof] = stamp + int64(stealth.ProbeWindow/time.Second)
+	confirmation, err := stealth.ProbeConfirmation(s.ProbeKey, proof)
+	if err != nil {
+		return false
+	}
+	w.Header().Set(stealth.ProbeAcceptedHeader, confirmation)
+	return true
 }
 
 func (s *Server) authorized(r *http.Request) bool {

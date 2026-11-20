@@ -92,7 +92,7 @@ jobs:
         run: python3 scripts/build_necko.py --source ../gecko --out ../necko-build --jobs 3
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
           cache-dependency-path: vetroff/go.sum
       - name: Native H2 and H3 cold handoff and binary transfer
         working-directory: vetroff

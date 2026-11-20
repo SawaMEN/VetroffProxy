@@ -21,41 +21,49 @@ import (
 	"github.com/SawaMEN/VetroffProxy/internal/egress"
 	"github.com/SawaMEN/VetroffProxy/internal/profile"
 	"github.com/SawaMEN/VetroffProxy/internal/safejson"
+	"github.com/SawaMEN/VetroffProxy/internal/stealth"
 	"github.com/SawaMEN/VetroffProxy/internal/tlsidentity"
 	"github.com/SawaMEN/VetroffProxy/internal/xhttp"
 )
 
 type ServerConfig struct {
-	EgressProxy    string                  `json:"egress_proxy,omitempty"`
-	EgressDNS      string                  `json:"egress_dns,omitempty"`
-	ProtocolPolicy contract.ProtocolPolicy `json:"protocol_policy,omitempty"`
-	UsersFile      string                  `json:"users_file,omitempty"`
-	UsersState     string                  `json:"users_state,omitempty"`
-	XHTTPPath      string                  `json:"xhttp_path,omitempty"`
-	XHTTPHost      string                  `json:"xhttp_host,omitempty"`
-	Version        int                     `json:"v"`
-	H3Listen       string                  `json:"h3_listen,omitempty"`
-	EnableUDP      bool                    `json:"enable_udp,omitempty"`
-	Listen         string                  `json:"listen"`
-	Certificate    string                  `json:"cert"`
-	PrivateKey     string                  `json:"key"`
-	Username       string                  `json:"username"`
-	Password       string                  `json:"password"`
-	WebRoot        string                  `json:"web_root,omitempty"`
-	ClusterFile    string                  `json:"cluster_file,omitempty"`
-	BondHub        bool                    `json:"bond_hub,omitempty"`
-	BondUpstream   string                  `json:"bond_upstream,omitempty"`
-	BondCA         string                  `json:"bond_ca,omitempty"`
-	BondSNI        string                  `json:"bond_sni,omitempty"`
-	BondPin        string                  `json:"bond_pin_sha256,omitempty"`
-	MaxTunnels     int                     `json:"max_tunnels"`
-	MaxConnections int                     `json:"max_connections"`
+	EgressProxy           string                  `json:"egress_proxy,omitempty"`
+	EgressDNS             string                  `json:"egress_dns,omitempty"`
+	ProtocolPolicy        contract.ProtocolPolicy `json:"protocol_policy,omitempty"`
+	UsersFile             string                  `json:"users_file,omitempty"`
+	UsersState            string                  `json:"users_state,omitempty"`
+	XHTTPPath             string                  `json:"xhttp_path,omitempty"`
+	XHTTPHost             string                  `json:"xhttp_host,omitempty"`
+	Version               int                     `json:"v"`
+	H3Listen              string                  `json:"h3_listen,omitempty"`
+	EnableUDP             bool                    `json:"enable_udp,omitempty"`
+	AdaptivePadding       bool                    `json:"adaptive_padding,omitempty"`
+	ProbeKey              string                  `json:"probe_key,omitempty"`
+	AdaptiveFragmentation bool                    `json:"adaptive_fragmentation,omitempty"`
+	TrafficShaping        bool                    `json:"traffic_shaping,omitempty"`
+	TimingJitter          string                  `json:"timing_jitter,omitempty"`
+	Listen                string                  `json:"listen"`
+	Certificate           string                  `json:"cert"`
+	PrivateKey            string                  `json:"key"`
+	Username              string                  `json:"username"`
+	Password              string                  `json:"password"`
+	WebRoot               string                  `json:"web_root,omitempty"`
+	ClusterFile           string                  `json:"cluster_file,omitempty"`
+	BondHub               bool                    `json:"bond_hub,omitempty"`
+	BondUpstream          string                  `json:"bond_upstream,omitempty"`
+	BondCA                string                  `json:"bond_ca,omitempty"`
+	BondSNI               string                  `json:"bond_sni,omitempty"`
+	BondPin               string                  `json:"bond_pin_sha256,omitempty"`
+	MaxTunnels            int                     `json:"max_tunnels"`
+	MaxConnections        int                     `json:"max_connections"`
 }
 type Options struct {
 	ProtocolPolicy                                                                                  contract.ProtocolPolicy
 	Server, Certificate, PrivateKey, Output, SNI, CACertFile, JoinLinkFile, UpstreamCAFile, WebRoot string
 	TLSBackend, Transport, XHTTPPath, XHTTPHost                                                     string
-	EnableUDP                                                                                       bool
+	EnableUDP, AdaptivePadding, AdaptiveFragmentation, TrafficShaping                               bool
+	ProbeGuard                                                                                      bool
+	TimingJitter                                                                                    time.Duration
 }
 
 var ErrConfig = errors.New("invalid server configuration")
@@ -82,6 +90,18 @@ func ReadServer(path string) (ServerConfig, error) {
 		return ServerConfig{}, ErrConfig
 	}
 	if c.ProtocolPolicy.Validate() != nil || c.ProtocolPolicy == contract.ProtocolStrict && (c.BondHub || c.BondUpstream != "" || c.ClusterFile != "") {
+		return ServerConfig{}, ErrConfig
+	}
+	if _, err := stealth.ParseTimingJitter(c.TimingJitter, c.AdaptivePadding); err != nil {
+		return ServerConfig{}, ErrConfig
+	}
+	if stealth.ValidateFragmentation(c.AdaptiveFragmentation, c.AdaptivePadding) != nil {
+		return ServerConfig{}, ErrConfig
+	}
+	if stealth.ValidateTrafficShaping(c.TrafficShaping, c.AdaptivePadding) != nil {
+		return ServerConfig{}, ErrConfig
+	}
+	if stealth.ValidateProbeKey(c.ProbeKey, c.ProtocolPolicy == contract.ProtocolStrict) != nil {
 		return ServerConfig{}, ErrConfig
 	}
 	if c.XHTTPPath != "" || c.XHTTPHost != "" {
@@ -114,7 +134,19 @@ func ReadServer(path string) (ServerConfig, error) {
 }
 
 func Generate(o Options) error {
-	if o.ProtocolPolicy.Validate() != nil || o.ProtocolPolicy == contract.ProtocolStrict && o.JoinLinkFile != "" {
+	if err := stealth.ValidateTimingJitter(o.TimingJitter, o.AdaptivePadding); err != nil {
+		return ErrSetup
+	}
+	if stealth.ValidateFragmentation(o.AdaptiveFragmentation, o.AdaptivePadding) != nil {
+		return ErrSetup
+	}
+	if stealth.ValidateTrafficShaping(o.TrafficShaping, o.AdaptivePadding) != nil {
+		return ErrSetup
+	}
+	if o.ProbeGuard && o.ProtocolPolicy != contract.ProtocolStrict {
+		return ErrSetup
+	}
+	if o.ProtocolPolicy.Validate() != nil || o.ProtocolPolicy == contract.ProtocolStrict && o.JoinLinkFile != "" || o.AdaptivePadding && o.ProtocolPolicy != contract.ProtocolStrict {
 		return ErrSetup
 	}
 	if o.ProtocolPolicy == contract.ProtocolDirect {
@@ -189,15 +221,24 @@ func Generate(o Options) error {
 		port = "443"
 	}
 	listen := net.JoinHostPort("", port)
-	config := ServerConfig{EnableUDP: o.EnableUDP, Version: 1, Listen: listen, Certificate: certPath, PrivateKey: keyPath, Username: "vetroff", MaxTunnels: 256, MaxConnections: 512}
+	config := ServerConfig{EnableUDP: o.EnableUDP, AdaptivePadding: o.AdaptivePadding, AdaptiveFragmentation: o.AdaptiveFragmentation, TrafficShaping: o.TrafficShaping, Version: 1, Listen: listen, Certificate: certPath, PrivateKey: keyPath, Username: "vetroff", MaxTunnels: 256, MaxConnections: 512}
 	config.ProtocolPolicy = o.ProtocolPolicy
+	config.TimingJitter = stealth.FormatTimingJitter(o.TimingJitter)
 	var secret [32]byte
 	if _, err := rand.Read(secret[:]); err != nil {
 		return ErrSetup
 	}
 	config.Password = base64.RawURLEncoding.EncodeToString(secret[:])
-	linkConfig := profile.Config{Version: 1, Servers: []string{u.String()}, Username: config.Username, Password: config.Password, SNI: policy.SNI, PinSHA256: policy.PinSHA256, Encryption: "tls13", TLSBackend: o.TLSBackend, Transport: o.Transport, XHTTPPath: o.XHTTPPath, XHTTPHost: o.XHTTPHost, Bond: true, Discover: true}
+	linkConfig := profile.Config{Version: 1, Servers: []string{u.String()}, Username: config.Username, Password: config.Password, SNI: policy.SNI, PinSHA256: policy.PinSHA256, Encryption: "tls13", TLSBackend: o.TLSBackend, Transport: o.Transport, XHTTPPath: o.XHTTPPath, XHTTPHost: o.XHTTPHost, Bond: true, Discover: true, AdaptivePadding: o.AdaptivePadding, AdaptiveFragmentation: o.AdaptiveFragmentation, TrafficShaping: o.TrafficShaping, TimingJitter: stealth.FormatTimingJitter(o.TimingJitter)}
 	linkConfig.ProtocolPolicy = o.ProtocolPolicy
+	if o.ProbeGuard {
+		probeKey, err := stealth.GenerateProbeKey()
+		if err != nil {
+			return ErrSetup
+		}
+		config.ProbeKey = probeKey
+		linkConfig.ProbeKey = probeKey
+	}
 	if o.ProtocolPolicy == contract.ProtocolStrict {
 		linkConfig.Bond, linkConfig.Discover = false, false
 	}

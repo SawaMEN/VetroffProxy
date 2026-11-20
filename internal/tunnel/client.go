@@ -65,6 +65,19 @@ type Client struct {
 	ConnectTimeout time.Duration
 	// Padding is an opt-in experiment; configure before Serve.
 	Padding bool
+	// AdaptivePadding enables continuous bounded frame padding (adaptive-v1).
+	// Mutually exclusive with Padding; configure before Serve.
+	AdaptivePadding bool
+	// ProbeKey enables per-request expiring HMAC proof with replay protection
+	// on servers configured for strict probe guarding. Configure before Serve.
+	ProbeKey string
+	// AdaptiveFragmentation varies only inner adaptive-v1 record sizes.
+	AdaptiveFragmentation bool
+	// TrafficShaping caps cumulative adaptive-v1 zero-fill padding.
+	TrafficShaping bool
+	// TimingJitter adds at most 5ms delay to small adaptive records.
+	// Zero leaves all writes immediate; configure before Serve.
+	TimingJitter time.Duration
 	// FallbackAttemptTimeout applies only with multiple configured endpoints.
 	// Zero uses five seconds; ConnectTimeout bounds all attempts together.
 	FallbackAttemptTimeout time.Duration
@@ -356,9 +369,13 @@ func (c *Client) handleContext(ctx context.Context, conn net.Conn) {
 	resp := stream.response
 	var upload io.Writer = writer
 	var download io.Reader = resp.Body
-	if c.Padding {
+	switch c.paddingMode() {
+	case paddingVersion:
 		upload = newPaddingWriter(writer)
 		download = newPaddingReader(resp.Body)
+	case adaptivePaddingVersion:
+		upload = newShapedAdaptivePaddingWriter(writer, ctx, c.TimingJitter, c.AdaptiveFragmentation, c.TrafficShaping)
+		download = newAdaptivePaddingReader(resp.Body)
 	}
 	if err := socks5Reply(conn, 0x00); err != nil {
 		return

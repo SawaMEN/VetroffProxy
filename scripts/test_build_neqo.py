@@ -6,6 +6,7 @@ import tempfile
 import unittest
 import tomllib
 import hashlib
+import shutil
 import subprocess
 from unittest import mock
 
@@ -82,6 +83,59 @@ class NeqoBuildIntegrity(unittest.TestCase):
                     build_neqo.download('https://invalid.test/headers', path, '0' * 64)
             self.assertEqual(path.read_bytes(), b'old')
             self.assertFalse(path.with_suffix('.part').exists())
+
+    def test_pinned_nspr_mirror_fallback_keeps_expected_hash(self):
+        url = 'https://archive.ubuntu.com/ubuntu' + build_neqo.NSPR_PACKAGE
+        data = b'hash-pinned NSPR fixture'
+        expected = hashlib.sha256(data).hexdigest()
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / 'headers.deb'
+            unavailable = build_neqo.urllib.error.HTTPError(url, 403, 'Forbidden', {}, None)
+            with mock.patch('urllib.request.urlopen', side_effect=[unavailable, io.BytesIO(data)]) as fetch:
+                build_neqo.download(url, target, expected)
+            self.assertEqual(target.read_bytes(), data)
+            self.assertEqual(fetch.call_count, 2)
+            self.assertFalse(target.with_suffix('.part').exists())
+
+    def test_pinned_nspr_mirror_hash_mismatch_fails_closed(self):
+        url = 'https://archive.ubuntu.com/ubuntu' + build_neqo.NSPR_PACKAGE
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / 'headers.deb'
+            with mock.patch('urllib.request.urlopen', return_value=io.BytesIO(b'untrusted')):
+                with self.assertRaises(ValueError):
+                    build_neqo.download(url, target, '0' * 64)
+            self.assertFalse(target.exists())
+            self.assertFalse(target.with_suffix('.part').exists())
+
+    @unittest.skipUnless(all(shutil.which(tool) for tool in ('cc', 'ar', 'objcopy', 'readelf')),
+                         'requires a compiler and binutils')
+    def test_cgo_archive_removes_bitcode_metadata_and_retains_native_code(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / 'bridge.c'
+            source.write_text('int bridge(void) { return 42; }\n')
+            obj = root / 'bridge.o'
+            subprocess.run(['cc', '-c', source, '-o', obj], check=True)
+            metadata = root / 'metadata'
+            metadata.write_bytes(b'fixture metadata')
+            subprocess.run(['objcopy', '--add-section', f'.llvmbc={metadata}',
+                            '--add-section', f'.llvmcmd={metadata}', obj], check=True)
+            archive = root / 'libbridge.a'
+            subprocess.run(['ar', 'rcs', archive, obj], check=True)
+
+            cgo_archive = root / 'cgo' / archive.name
+            build_neqo.prepare_cgo_archive(archive, cgo_archive)
+            original_sections = subprocess.check_output(['readelf', '-SW', archive], text=True)
+            cgo_sections = subprocess.check_output(['readelf', '-SW', cgo_archive], text=True)
+            for section in ('.llvmbc', '.llvmcmd'):
+                self.assertIn(section, original_sections)
+                self.assertNotIn(section, cgo_sections)
+
+            caller = root / 'caller.c'
+            caller.write_text('int bridge(void); int main(void) { return bridge() != 42; }\n')
+            executable = root / 'caller'
+            subprocess.run(['cc', caller, cgo_archive, '-o', executable], check=True)
+            subprocess.run([executable], check=True)
 
     def test_reuse_license_directory_exports_attribution(self):
         with tempfile.TemporaryDirectory() as tmp:

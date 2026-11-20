@@ -19,7 +19,7 @@ python3 -m unittest discover -s scripts -p 'test_*.py'
 
 Linux NSS: установите `libnss3-dev libnspr4-dev pkg-config`, затем
 `go build -tags nss -o vetroff ./cmd/vetroff`.
-Для NSS/Neqo:
+Для NSS/Neqo дополнительно установите `binutils` и выполните:
 
 ```sh
 python3 scripts/build_neqo.py

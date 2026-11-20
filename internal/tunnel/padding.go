@@ -1,6 +1,7 @@
 package tunnel
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
@@ -8,15 +9,19 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"time"
+
+	"github.com/SawaMEN/VetroffProxy/internal/stealth"
 )
 
 const (
-	paddingHeader         = "X-Vetroff-Padding"
-	paddingVersion        = "initial-v1"
-	initialPaddingRecords = 8
-	maxPaddingPayload     = 16 << 10
-	maxPaddingBytes       = 255
-	paddingBufferSize     = 3 + maxPaddingPayload + maxPaddingBytes
+	paddingHeader          = "X-Vetroff-Padding"
+	paddingVersion         = "initial-v1"
+	adaptivePaddingVersion = "adaptive-v1"
+	initialPaddingRecords  = 8
+	maxPaddingPayload      = 16 << 10
+	maxPaddingBytes        = 255
+	paddingBufferSize      = 3 + maxPaddingPayload + maxPaddingBytes
 )
 
 // Negotiation is inside authenticated HTTPS. This is Vetroff's own versioned
@@ -32,15 +37,137 @@ func paddingRequested(header http.Header) (bool, error) {
 	return true, nil
 }
 
+// paddingModeRequested refuses duplicates, unknown modes and mixed-case header aliases.
+// Mode selection is authenticated by the HTTPS transport and must be echoed.
+func paddingModeRequested(h http.Header) (string, error) {
+	mode, present, valid := protocolValue(h, paddingHeader)
+	if !valid {
+		return "", errors.New(i18n.Text("unsupported padding mode"))
+	}
+	if !present {
+		return "", nil
+	}
+	if mode != paddingVersion && mode != adaptivePaddingVersion {
+		return "", errors.New(i18n.Text("unsupported padding mode"))
+	}
+	return mode, nil
+}
+
+func (c *Client) paddingMode() string {
+	if c.AdaptivePadding {
+		return adaptivePaddingVersion
+	}
+	if c.Padding {
+		return paddingVersion
+	}
+	return ""
+}
+
+func adaptivePaddingLimit(payloadLength int) int {
+	return min(maxPaddingBytes, 24+payloadLength/8)
+}
+
+func newAdaptivePaddingWriter(w io.Writer) *paddingWriter {
+	return &paddingWriter{writer: w, adaptive: true}
+}
+
+// newTimedAdaptivePaddingWriter applies optional, cancellable delays only to
+// small application frames. Large records, disabled mode and both half-closes
+// retain their existing behavior. Jitter is local and does not alter the wire.
+func newTimedAdaptivePaddingWriter(w io.Writer, ctx context.Context, maxDelay time.Duration) *paddingWriter {
+	return newShapedAdaptivePaddingWriter(w, ctx, maxDelay, false, false)
+}
+
+// Fragmentation changes only inner adaptive-v1 record boundaries. A peer
+// already using adaptive-v1 can decode the resulting bounded records.
+func newShapedAdaptivePaddingWriter(w io.Writer, ctx context.Context, maxDelay time.Duration, fragment, shape bool) *paddingWriter {
+	return &paddingWriter{writer: w, adaptive: true, ctx: ctx, jitter: maxDelay, fragment: fragment, shaping: shape}
+}
+
+// Shape padding within the cumulative, per-direction 1/8 payload budget.
+// Size classes operate inside HTTPS, not at TCP/TLS packet boundaries.
+func shapedPaddingLength(payload int, sample byte, allowance uint64) int {
+	limit := adaptivePaddingLimit(payload)
+	if allowance < uint64(limit) {
+		limit = int(allowance)
+	}
+	if limit == 0 {
+		return 0
+	}
+	base := payload + 3
+	for _, bucket := range [...]int{64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384} {
+		if bucket <= base {
+			continue
+		}
+		if bucket-base <= limit {
+			return bucket - base
+		}
+		break
+	}
+	return int(sample) % (limit + 1)
+}
+
+func (w *paddingWriter) nextPayloadSize(remaining int) (int, error) {
+	if !w.adaptive || !w.fragment || remaining <= stealth.MaxFragmentSize {
+		return min(remaining, maxPaddingPayload), nil
+	}
+	var draw [2]byte
+	if _, err := io.ReadFull(rand.Reader, draw[:]); err != nil {
+		return 0, err
+	}
+	span := stealth.MaxFragmentSize - stealth.MinFragmentSize + 1
+	return stealth.MinFragmentSize + int(binary.BigEndian.Uint16(draw[:]))%span, nil
+}
+
+func timingJitterDelay(sample byte, maxDelay time.Duration) time.Duration {
+	return time.Duration(sample&3) * maxDelay / 3
+}
+
+func waitTimingJitter(ctx context.Context, delay time.Duration) error {
+	if delay == 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (w *paddingWriter) delaySmallRecord(n int) error {
+	if w.jitter <= 0 || n > stealth.SmallRecordLimit {
+		return nil
+	}
+	var draw [1]byte
+	if _, err := io.ReadFull(rand.Reader, draw[:]); err != nil {
+		return err
+	}
+	return waitTimingJitter(w.ctx, timingJitterDelay(draw[0], w.jitter))
+}
+
+func newAdaptivePaddingReader(r io.Reader) *paddingReader {
+	return &paddingReader{reader: r, adaptive: true}
+}
+
 var paddingBuffers = sync.Pool{New: func() any { return new([paddingBufferSize]byte) }}
 
-// paddingWriter frames only the first eight records in one direction, then
-// passes bytes through unchanged. It has one writer, just like the H2 stream.
+// paddingWriter frames the first eight records in initial-v1 and every record
+// in adaptive-v1. It has one writer, just like the H2 stream.
 // A failed write is terminal: retrying a partially emitted frame is unsafe.
 type paddingWriter struct {
-	writer  io.Writer
-	records int
-	err     error
+	writer       io.Writer
+	records      int
+	adaptive     bool
+	ctx          context.Context
+	jitter       time.Duration
+	fragment     bool
+	shaping      bool
+	shapePayload uint64
+	shapePadding uint64
+	err          error
 }
 
 func newPaddingWriter(w io.Writer) *paddingWriter {
@@ -54,33 +181,64 @@ func (w *paddingWriter) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	if w.records == 0 {
+	if w.records == 0 && !w.adaptive {
 		return w.writeRaw(p)
 	}
 	buffer := paddingBuffers.Get().(*[paddingBufferSize]byte)
 	defer paddingBuffers.Put(buffer)
 	total := 0
-	for len(p) > 0 && w.records > 0 {
-		// One random byte gives a uniform padding length in [0,255], with no PRNG
-		// seed to fingerprint. Randomness failure aborts rather than weakening mode.
+	// Only an originally small application write can incur timing jitter.
+	// A small tail of an intentionally fragmented bulk write must not.
+	interactive := len(p) <= stealth.SmallRecordLimit
+	for len(p) > 0 && (w.records > 0 || w.adaptive) {
+		// One random byte selects a padding length, without a persistent PRNG
+		// seed. Randomness failure aborts rather than weakening the mode.
 		if _, err := io.ReadFull(rand.Reader, buffer[2:3]); err != nil {
 			w.err = err
 			return total, err
 		}
+		n, err := w.nextPayloadSize(len(p))
+		if err != nil {
+			w.err = err
+			return total, err
+		}
 		pad := int(buffer[2])
-		n := min(len(p), maxPaddingPayload)
+		if w.adaptive {
+			if w.shaping {
+				// Optional zero-fill is <=12.5% of useful bytes per sender
+				// stream; mandatory 3-byte frame headers are not included.
+				allowance := (w.shapePayload+uint64(n))/stealth.PaddingBudgetDivisor - w.shapePadding
+				pad = shapedPaddingLength(n, buffer[2], allowance)
+			} else {
+				// Preserve the exact adaptive-v1 default padding behavior.
+				pad %= adaptivePaddingLimit(n) + 1
+			}
+			buffer[2] = byte(pad)
+		}
 		binary.BigEndian.PutUint16(buffer[:2], uint16(n))
 		copy(buffer[3:3+n], p[:n])
 		// A pooled buffer can contain another stream's plaintext. Never transmit it
 		// as padding. Padding is zero-filled inside the encrypted TLS connection.
 		clear(buffer[3+n : 3+n+pad])
+		if interactive {
+			if err := w.delaySmallRecord(n); err != nil {
+				w.err = err
+				return total, err
+			}
+		}
 		if err := writePaddingFrame(w.writer, buffer[:3+n+pad]); err != nil {
 			w.err = err
 			return total, err
 		}
+		if w.shaping {
+			w.shapePayload += uint64(n)
+			w.shapePadding += uint64(pad)
+		}
 		total += n
 		p = p[n:]
-		w.records--
+		if !w.adaptive {
+			w.records--
+		}
 	}
 	if len(p) > 0 {
 		n, err := w.writeRaw(p)
@@ -121,11 +279,12 @@ func writePaddingFrame(w io.Writer, p []byte) error {
 // EOF at a record boundary is a normal half-close; EOF inside any record is an
 // error, including missing padding bytes. No padding-only records are accepted.
 type paddingReader struct {
-	reader  io.Reader
-	records int
-	buffer  []byte
-	pending []byte
-	err     error
+	reader   io.Reader
+	records  int
+	adaptive bool
+	buffer   []byte
+	pending  []byte
+	err      error
 }
 
 func newPaddingReader(r io.Reader) *paddingReader {
@@ -144,7 +303,7 @@ func (r *paddingReader) Read(p []byte) (int, error) {
 	if r.err != nil {
 		return 0, r.err
 	}
-	if r.records == 0 {
+	if r.records == 0 && !r.adaptive {
 		r.buffer = nil
 		return r.reader.Read(p)
 	}
@@ -156,7 +315,7 @@ func (r *paddingReader) Read(p []byte) (int, error) {
 	}
 	n := int(binary.BigEndian.Uint16(header[:2]))
 	pad := int(header[2])
-	if n == 0 || n > maxPaddingPayload {
+	if n == 0 || n > maxPaddingPayload || (r.adaptive && pad > adaptivePaddingLimit(n)) {
 		r.err = errors.New(i18n.Text("invalid padding record length"))
 		r.buffer = nil
 		return 0, r.err
@@ -173,7 +332,9 @@ func (r *paddingReader) Read(p []byte) (int, error) {
 		return 0, err
 	}
 	r.pending = r.buffer[:n]
-	r.records--
+	if !r.adaptive {
+		r.records--
+	}
 	count := copy(p, r.pending)
 	r.pending = r.pending[count:]
 	r.releaseConsumedBuffer()
@@ -183,7 +344,7 @@ func (r *paddingReader) Read(p []byte) (int, error) {
 func (r *paddingReader) releaseConsumedBuffer() {
 	if len(r.pending) == 0 {
 		r.pending = nil
-		if r.records == 0 {
+		if r.records == 0 && !r.adaptive {
 			r.buffer = nil
 		}
 	}

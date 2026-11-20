@@ -20,6 +20,7 @@ import (
 	"github.com/SawaMEN/VetroffProxy/internal/contract"
 	"github.com/SawaMEN/VetroffProxy/internal/egress"
 	"github.com/SawaMEN/VetroffProxy/internal/profile"
+	"github.com/SawaMEN/VetroffProxy/internal/stealth"
 	"github.com/SawaMEN/VetroffProxy/internal/tlsidentity"
 	"github.com/SawaMEN/VetroffProxy/internal/transportengine"
 	"github.com/SawaMEN/VetroffProxy/internal/tunnel"
@@ -87,12 +88,32 @@ func main() {
 		upstreamCA := fs.String("bond-ca-cert", "", i18n.Text("additional trusted PEM for the common exit"))
 		web := fs.String("web-root", "", i18n.Text("public website directory for ordinary requests and rejected probes"))
 		enableUDP := fs.Bool("enable-udp", false, i18n.Text("experimental SOCKS5 UDP request/response relay on generated server"))
+		adaptivePadding := fs.Bool("adaptive-padding", false, "enable adaptive padding in generated single-node strict client/server profiles")
+		adaptiveFragmentation := fs.Bool("adaptive-fragmentation", false, "vary inner adaptive-v1 record sizes (requires --adaptive-padding)")
+		trafficShaping := fs.Bool("traffic-shaping", false, "bounded adaptive-v1 padding budget and size classes")
+		probeGuard := fs.Bool("probe-guard", false, "generate a separate HMAC probe key for strict client/server profiles")
+		timingJitter := fs.Duration("timing-jitter", 0, "optional delay for short adaptive frames (0..5ms); requires --adaptive-padding")
 		i18n.Parse(fs, os.Args[2:])
 		wirePolicy, err := contract.ParseProtocolPolicy(*protocolPolicy)
 		if err != nil {
 			log.Fatal(err)
 		}
-		if err := bootstrap.Generate(bootstrap.Options{ProtocolPolicy: wirePolicy, Server: *server, Certificate: *cert, PrivateKey: *key, Output: *out, SNI: *sni, CACertFile: *ca, JoinLinkFile: *join, UpstreamCAFile: *upstreamCA, WebRoot: *web, TLSBackend: *backend, Transport: *transport, XHTTPPath: *xhttpPath, XHTTPHost: *xhttpHost, EnableUDP: *enableUDP}); err != nil {
+		if *adaptivePadding && wirePolicy != contract.ProtocolStrict {
+			log.Fatal("--adaptive-padding setup requires --protocol-policy strict (single-node profile)")
+		}
+		if *probeGuard && wirePolicy != contract.ProtocolStrict {
+			log.Fatal("--probe-guard setup requires --protocol-policy strict")
+		}
+		if err := stealth.ValidateTimingJitter(*timingJitter, *adaptivePadding); err != nil {
+			log.Fatal(err)
+		}
+		if err := stealth.ValidateFragmentation(*adaptiveFragmentation, *adaptivePadding); err != nil {
+			log.Fatal(err)
+		}
+		if err := stealth.ValidateTrafficShaping(*trafficShaping, *adaptivePadding); err != nil {
+			log.Fatal(err)
+		}
+		if err := bootstrap.Generate(bootstrap.Options{AdaptivePadding: *adaptivePadding, ProbeGuard: *probeGuard, AdaptiveFragmentation: *adaptiveFragmentation, TrafficShaping: *trafficShaping, TimingJitter: *timingJitter, ProtocolPolicy: wirePolicy, Server: *server, Certificate: *cert, PrivateKey: *key, Output: *out, SNI: *sni, CACertFile: *ca, JoinLinkFile: *join, UpstreamCAFile: *upstreamCA, WebRoot: *web, TLSBackend: *backend, Transport: *transport, XHTTPPath: *xhttpPath, XHTTPHost: *xhttpHost, EnableUDP: *enableUDP}); err != nil {
 			log.Fatal(i18n.Text(err.Error()))
 		}
 		fmt.Println(i18n.Text("configuration created: server.json, connection.txt and node.json (secrets not printed)"))
@@ -122,6 +143,11 @@ func main() {
 		cert := fs.String("cert", "", i18n.Text("TLS certificate PEM"))
 		key := fs.String("key", "", i18n.Text("TLS private key PEM"))
 		padding := fs.Bool("padding", false, i18n.Text("enable experimental negotiated initial-record padding"))
+		adaptivePadding := fs.Bool("adaptive-padding", false, "enable experimental negotiated adaptive-v1 continuous padding")
+		adaptiveFragmentation := fs.Bool("adaptive-fragmentation", false, "vary inner adaptive-v1 downlink record sizes")
+		trafficShaping := fs.Bool("traffic-shaping", false, "cap adaptive-v1 downlink padding and target size classes")
+		timingJitter := fs.Duration("timing-jitter", 0, "max delay for small adaptive downlink records (0..5ms)")
+		probeKey := os.Getenv("VETROFF_PROBE_KEY")
 		egressProxy := fs.String("egress-proxy", "", "SOCKS5 exit for all destination TCP/UDP; numeric proxy IP:port, no direct fallback")
 		egressDNS := fs.String("egress-dns", "", "numeric DNS IP:port through the SOCKS5 exit (default 1.1.1.1:53)")
 		bondHub := fs.Bool("bond-hub", false, i18n.Text("enable common exit for bonded streams"))
@@ -160,12 +186,32 @@ func main() {
 			*listen, *cert, *key = config.Listen, config.Certificate, config.PrivateKey
 			*h3Listen = config.H3Listen
 			*enableUDP = config.EnableUDP
+			*adaptivePadding = config.AdaptivePadding
+			probeKey = config.ProbeKey
+			*adaptiveFragmentation = config.AdaptiveFragmentation
+			*trafficShaping = config.TrafficShaping
+			*timingJitter, err = stealth.ParseTimingJitter(config.TimingJitter, config.AdaptivePadding)
+			if err != nil {
+				log.Fatal(err)
+			}
 			*xhttpPath, *xhttpHost = config.XHTTPPath, config.XHTTPHost
 			*webRoot, *clusterFile = config.WebRoot, config.ClusterFile
 			*bondHub, *bondRelay, *bondCA = config.BondHub, config.BondUpstream, config.BondCA
 			*bondSNI, *bondPin = config.BondSNI, config.BondPin
 			*maxTunnels, *maxConnections = config.MaxTunnels, config.MaxConnections
 			wirePolicy = config.ProtocolPolicy
+		}
+		if err := stealth.ValidateTimingJitter(*timingJitter, *adaptivePadding); err != nil {
+			log.Fatal(err)
+		}
+		if err := stealth.ValidateFragmentation(*adaptiveFragmentation, *adaptivePadding); err != nil {
+			log.Fatal(err)
+		}
+		if err := stealth.ValidateTrafficShaping(*trafficShaping, *adaptivePadding); err != nil {
+			log.Fatal(err)
+		}
+		if err := stealth.ValidateProbeKey(probeKey, wirePolicy == contract.ProtocolStrict); err != nil {
+			log.Fatal(err)
 		}
 		if wirePolicy == contract.ProtocolStrict && (*bondHub || *bondRelay != "" || *clusterFile != "") {
 			log.Fatal("strict protocol policy is not supported with bond/discovery")
@@ -222,7 +268,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		handler := &tunnel.Server{Egress: exit, RequireProtocolNegotiation: wirePolicy == contract.ProtocolStrict, Access: controller, BondRelayOnly: controller != nil && *bondRelay != "", XHTTPSettings: carrierSettings, Username: user, Password: password, AllowPrivate: *allowPrivate, EnableUDP: *enableUDP, Cover: cover, Padding: *padding, MaxTunnels: *maxTunnels}
+		handler := &tunnel.Server{Egress: exit, RequireProtocolNegotiation: wirePolicy == contract.ProtocolStrict, Access: controller, BondRelayOnly: controller != nil && *bondRelay != "", XHTTPSettings: carrierSettings, Username: user, Password: password, AllowPrivate: *allowPrivate, EnableUDP: *enableUDP, Cover: cover, Padding: *padding, AdaptivePadding: *adaptivePadding, ProbeKey: probeKey, AdaptiveFragmentation: *adaptiveFragmentation, TrafficShaping: *trafficShaping, TimingJitter: *timingJitter, MaxTunnels: *maxTunnels}
 		if *bondHub {
 			hub := handler.NewBondHub()
 			defer hub.Close()
@@ -347,7 +393,16 @@ func main() {
 		balance := fs.String("balance", "failover", i18n.Text("new-stream scheduling: failover, round-robin, least-active, adaptive"))
 		attemptTimeout := fs.Duration("fallback-attempt-timeout", 5*time.Second, i18n.Text("setup time per endpoint when fallbacks are configured"))
 		padding := fs.Bool("padding", false, i18n.Text("require experimental initial-record padding (server must enable it)"))
+		adaptivePadding := fs.Bool("adaptive-padding", false, "require adaptive-v1 continuous padding (server must enable it)")
+		adaptiveFragmentation := fs.Bool("adaptive-fragmentation", false, "vary inner adaptive-v1 uplink record sizes")
+		trafficShaping := fs.Bool("traffic-shaping", false, "cap adaptive-v1 uplink padding and target size classes")
+		timingJitter := fs.Duration("timing-jitter", 0, "max delay for small adaptive uplink records (0..5ms)")
+		probeKey := os.Getenv("VETROFF_PROBE_KEY")
 		neckoBundle := fs.String("necko-bundle", "", "verified Necko bundle directory (with --engine necko)")
+		browserProfile := new(string)
+		if os.Args[1] == "client" {
+			fs.StringVar(browserProfile, "browser-profile", "", "pinned native NSS/H2 browser profile: firefox-158 (not full Firefox equivalence)")
+		}
 		engine := new(string)
 		if os.Args[1] == "client" {
 			defaultEngine := "builtin"
@@ -407,7 +462,7 @@ func main() {
 			conflict := false
 			fs.Visit(func(f *flag.Flag) {
 				switch f.Name {
-				case "events-json", "shutdown-on-stdin-eof", "listen", "ca-cert", "lang", "link", "link-file", "enable-udp", "udp-stream", "udp-multi-node", "max-connections", "h2-receive-profile", "tls-client-profile", "bond-lanes", "quic-backend", "h3-fallback", "quic-handshake-timeout", "engine", "necko-bundle", "engine-status-interval", "node-pins-file", "socks-allow-lan", "bond-route", "bond-adaptive", "bond-autotune", "bond-traffic", "bond-metrics-interval", "node-status-interval":
+				case "events-json", "shutdown-on-stdin-eof", "listen", "ca-cert", "lang", "link", "link-file", "enable-udp", "udp-stream", "udp-multi-node", "max-connections", "h2-receive-profile", "tls-client-profile", "bond-lanes", "quic-backend", "h3-fallback", "quic-handshake-timeout", "engine", "necko-bundle", "browser-profile", "engine-status-interval", "node-pins-file", "socks-allow-lan", "bond-route", "bond-adaptive", "bond-autotune", "bond-traffic", "bond-metrics-interval", "node-status-interval":
 				default:
 					conflict = true
 				}
@@ -439,9 +494,33 @@ func main() {
 			*discover = imported.Discover
 			*bondPipeline = imported.Pipeline
 			*padding = imported.Padding
+			*adaptivePadding = imported.AdaptivePadding
+			probeKey = imported.ProbeKey
+			*adaptiveFragmentation = imported.AdaptiveFragmentation
+			*trafficShaping = imported.TrafficShaping
+			*timingJitter, importErr = stealth.ParseTimingJitter(imported.TimingJitter, imported.AdaptivePadding)
+			if importErr != nil {
+				log.Fatal(importErr)
+			}
 			*connectTimeout, _ = time.ParseDuration(imported.ConnectTimeout)
 			*attemptTimeout, _ = time.ParseDuration(imported.AttemptTimeout)
 			wirePolicy = imported.ProtocolPolicy
+		}
+		if *padding && *adaptivePadding {
+			log.Fatal("choose either --padding or --adaptive-padding")
+		}
+
+		if err := stealth.ValidateTimingJitter(*timingJitter, *adaptivePadding); err != nil {
+			log.Fatal(err)
+		}
+		if err := stealth.ValidateFragmentation(*adaptiveFragmentation, *adaptivePadding); err != nil {
+			log.Fatal(err)
+		}
+		if err := stealth.ValidateTrafficShaping(*trafficShaping, *adaptivePadding); err != nil {
+			log.Fatal(err)
+		}
+		if err := stealth.ValidateProbeKey(probeKey, wirePolicy == contract.ProtocolStrict); err != nil {
+			log.Fatal(err)
 		}
 		if wirePolicy == contract.ProtocolStrict && (*bonded || *discover) {
 			log.Fatal("strict protocol policy is not supported with bond/discovery")
@@ -450,7 +529,7 @@ func main() {
 			if user == "" || password == "" {
 				log.Fatal(i18n.Text("set VETROFF_USER and VETROFF_PASSWORD (nonempty)"))
 			}
-			exported, err := profile.Encode(profile.Config{ProtocolPolicy: wirePolicy, Version: 1, Servers: append([]string{*server}, fallbacks...), Username: user, Password: password, TLSBackend: *tlsBackend, Transport: *nativeTransport, XHTTPPath: *xhttpPath, XHTTPHost: *xhttpHost, SNI: *sni, PinSHA256: *pin, Encryption: *encryption, Balance: *balance, Bond: *bonded, Discover: *discover, Pipeline: *bondPipeline, Padding: *padding, ConnectTimeout: connectTimeout.String(), AttemptTimeout: attemptTimeout.String()})
+			exported, err := profile.Encode(profile.Config{ProtocolPolicy: wirePolicy, Version: 1, Servers: append([]string{*server}, fallbacks...), Username: user, Password: password, TLSBackend: *tlsBackend, Transport: *nativeTransport, XHTTPPath: *xhttpPath, XHTTPHost: *xhttpHost, SNI: *sni, PinSHA256: *pin, Encryption: *encryption, Balance: *balance, Bond: *bonded, Discover: *discover, Pipeline: *bondPipeline, Padding: *padding, AdaptivePadding: *adaptivePadding, ProbeKey: probeKey, AdaptiveFragmentation: *adaptiveFragmentation, TrafficShaping: *trafficShaping, TimingJitter: stealth.FormatTimingJitter(*timingJitter), ConnectTimeout: connectTimeout.String(), AttemptTimeout: attemptTimeout.String()})
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -541,7 +620,8 @@ func main() {
 		failClient := func(v ...any) { client.Close(); log.Fatal(v...) }
 		intent := transportengine.Config{
 			Engine: *engine, Transport: *nativeTransport, NeckoBundle: *neckoBundle,
-			AutoNeckoExcluded: ((wirePolicy == contract.ProtocolStrict || *padding) && !transportengine.NativeHTTPHeaders(*nativeTransport)),
+			BrowserProfile:    *browserProfile,
+			AutoNeckoExcluded: ((wirePolicy == contract.ProtocolStrict || *padding || *adaptivePadding) && !transportengine.NativeHTTPHeaders(*nativeTransport)),
 			TLSBackend:        *tlsBackend, QUICBackend: *quicBackend,
 			H3Fallback: *h3Fallback, QUICHandshakeTimeout: *quicTimeout,
 			TLSClientProfile: *tlsProfile, HTTP2ReceiveProfile: *h2Profile,
@@ -612,6 +692,11 @@ func main() {
 		client.FallbackAttemptTimeout = *attemptTimeout
 		client.ConnectTimeout = *connectTimeout
 		client.Padding = *padding
+		client.AdaptivePadding = *adaptivePadding
+		client.ProbeKey = probeKey
+		client.AdaptiveFragmentation = *adaptiveFragmentation
+		client.TrafficShaping = *trafficShaping
+		client.TimingJitter = *timingJitter
 		switch *bondPipeline {
 		case "auto":
 		case "4":

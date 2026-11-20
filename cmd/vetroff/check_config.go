@@ -205,6 +205,7 @@ func checkServerConfig(path string, r *configReport) {
 	if r.OK {
 		r.Settings = map[string]any{"h3": c.H3Listen != "", "udp": c.EnableUDP, "managed_users": c.UsersFile != "", "cascade": c.EgressProxy != "", "bond_hub": c.BondHub, "bond_relay": c.BondUpstream != "", "max_tunnels": c.MaxTunnels, "max_connections": c.MaxConnections}
 		r.Settings["protocol_policy"] = c.ProtocolPolicy.Effective()
+		r.Settings["probe_guard"] = c.ProbeKey != ""
 	}
 }
 
@@ -233,6 +234,12 @@ func checkClientConfig(path, ca, engine string, r *configReport) {
 	}
 	defer client.Close()
 	client.RequireProtocolNegotiation = c.ProtocolPolicy == contract.ProtocolStrict
+	client.Padding = c.Padding
+	client.AdaptivePadding = c.AdaptivePadding
+	client.AdaptiveFragmentation = c.AdaptiveFragmentation
+	client.TrafficShaping = c.TrafficShaping
+	client.ProbeKey = c.ProbeKey
+	client.TimingJitter, _ = time.ParseDuration(c.TimingJitter)
 	err = plan.Apply(client, c.SNI, c.PinSHA256)
 	if err == nil {
 		err = client.SetXHTTPSettings(c.XHTTPPath, c.XHTTPHost)
@@ -253,5 +260,6 @@ func checkClientConfig(path, ca, engine string, r *configReport) {
 		status := client.TransportStatus()
 		r.Settings = map[string]any{"engine": status.Engine, "transport": status.Transport, "tls_backend": status.TLSBackend, "quic_backend": status.QUICBackend, "servers": len(c.Servers), "bond": c.Bond, "discover": c.Discover, "padding": c.Padding, "balance": c.Balance, "connect_timeout": c.ConnectTimeout, "attempt_timeout": c.AttemptTimeout, "nss_available": buildinfo.NSSAvailable}
 		r.Settings["protocol_policy"] = c.ProtocolPolicy.Effective()
+		r.Settings["probe_guard"] = c.ProbeKey != ""
 	}
 }

@@ -77,8 +77,8 @@ func (c *Client) EnableBond() error {
 	if c.FallbackAttemptTimeout > 0 && c.FallbackAttemptTimeout < 100*time.Millisecond {
 		return errors.New(i18n.Text("bond attempt timeout must be at least 100ms"))
 	}
-	if c.Padding {
-		return errors.New(i18n.Text("bond and initial-v1 padding cannot be combined"))
+	if c.Padding || c.AdaptivePadding {
+		return errors.New(i18n.Text("bond and TCP padding cannot be combined"))
 	}
 	c.bondClient = &bond.Client{Endpoints: append([]*url.URL{c.ServerURL}, c.fallbackServers...), Transport: c.transport, Username: c.Username, Password: c.Password, AttemptTimeout: c.FallbackAttemptTimeout, SetupTimeout: c.ConnectTimeout, Pipeline: c.BondPipeline, PersistentLanes: c.BondLanes, Adaptive: c.BondAdaptive, AutoTune: c.BondAutoTune, TrafficMode: c.BondTraffic}
 	return nil

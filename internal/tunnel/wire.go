@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/SawaMEN/VetroffProxy/internal/buildinfo"
+	"github.com/SawaMEN/VetroffProxy/internal/stealth"
 )
 
 const protocolVersionHeader = "X-Vetroff-Version"
@@ -104,6 +105,10 @@ func (s *Server) acceptProtocol(w http.ResponseWriter, r *http.Request) bool {
 			available["padding-initial-v1"] = true
 			capabilities = append(capabilities, "padding-initial-v1")
 		}
+		if s.AdaptivePadding {
+			available["padding-adaptive-v1"] = true
+			capabilities = append(capabilities, "padding-adaptive-v1")
+		}
 	}
 	for _, token := range tokens {
 		if !available[token] {
@@ -118,15 +123,41 @@ func (s *Server) acceptProtocol(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-func (c *Client) requestProtocol(r *http.Request, capability string) {
+func (c *Client) requestProtocol(r *http.Request, capability string) error {
+	if c.ProbeKey != "" {
+		proof, err := stealth.NewProbeProof(c.ProbeKey)
+		if err != nil {
+			return err
+		}
+		r.Header.Set(stealth.ProbeHeader, proof)
+	}
 	if !c.RequireProtocolNegotiation {
-		return
+		return nil
 	}
 	r.Header.Set(protocolVersionHeader, buildinfo.ProtocolDraft)
-	if capability == "tcp" && c.Padding {
-		capability += ",padding-initial-v1"
+	if capability == "tcp" {
+		switch c.paddingMode() {
+		case paddingVersion:
+			capability += ",padding-initial-v1"
+		case adaptivePaddingVersion:
+			capability += ",padding-adaptive-v1"
+		}
 	}
 	r.Header.Set(protocolRequireHeader, capability)
+	return nil
+}
+
+// Require a signed acknowledgement from a peer that knows the probe key;
+// a legacy server must never be silently accepted by an opted-in client.
+func (c *Client) verifyProbeConfirmation(req *http.Request, resp *http.Response) error {
+	if c.ProbeKey == "" {
+		return nil
+	}
+	value, present, valid := protocolValue(resp.Header, stealth.ProbeAcceptedHeader)
+	if !present || !valid || !stealth.VerifyProbeConfirmation(c.ProbeKey, req.Header.Get(stealth.ProbeHeader), value) {
+		return ErrProtocolNegotiation
+	}
+	return nil
 }
 
 func (c *Client) verifyProtocol(r *http.Response, capability string) error {
@@ -149,7 +180,8 @@ func (c *Client) verifyProtocol(r *http.Response, capability string) error {
 	for _, token := range tokens {
 		confirmed[token] = true
 	}
-	if !confirmed[capability] || (capability == "tcp" && c.Padding && !confirmed["padding-initial-v1"]) {
+	if !confirmed[capability] || (capability == "tcp" && c.Padding && !confirmed["padding-initial-v1"]) ||
+		(capability == "tcp" && c.AdaptivePadding && !confirmed["padding-adaptive-v1"]) {
 		return ErrProtocolNegotiation
 	}
 	return nil

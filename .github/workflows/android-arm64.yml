@@ -39,14 +39,31 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      # GitHub's Ubuntu image already ships the Android SDK command-line tools.
+      # setup-android@v3 attempts to install the removed legacy "tools" SDK
+      # package and fails before the actual platform/NDK install.
       - name: Install Android SDK platform and NDK
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager --install "platforms;android-28" "ndk;27.2.12479018"
-          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(command -v sdkmanager)"
+          fi
+          test -x "$SDKMANAGER"
+          # yes may receive SIGPIPE once sdkmanager finishes: retain the
+          # sdkmanager exit status rather than the input producer's.
+          set +o pipefail
+          yes | "$SDKMANAGER" --sdk_root="$SDK" --licenses >/dev/null
+          licenses_status=${PIPESTATUS[1]}
+          set -o pipefail
+          test "$licenses_status" -eq 0
+          "$SDKMANAGER" --sdk_root="$SDK" --install "platforms;android-28" "ndk;27.2.12479018"
+          test -d "$SDK/platforms/android-28"
+          test -d "$SDK/ndk/27.2.12479018"
           echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$SDK/ndk/27.2.12479018" >> "$GITHUB_ENV"
       - name: Unit-test Android API
         shell: bash

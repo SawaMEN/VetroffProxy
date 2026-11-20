@@ -212,6 +212,11 @@ func runDoctor(ctx context.Context, o doctorOptions, lookup func(context.Context
 	r.Transport, r.Engine = plan.Transport, plan.Engine
 	client.RequireProtocolNegotiation = c.ProtocolPolicy == contract.ProtocolStrict
 	client.Padding = c.Padding
+	client.AdaptivePadding = c.AdaptivePadding
+	client.AdaptiveFragmentation = c.AdaptiveFragmentation
+	client.TrafficShaping = c.TrafficShaping
+	client.ProbeKey = c.ProbeKey
+	client.TimingJitter, _ = time.ParseDuration(c.TimingJitter)
 	client.ConnectTimeout, _ = time.ParseDuration(c.ConnectTimeout)
 	client.EnableUDP = o.network == "udp"
 	step = time.Now()

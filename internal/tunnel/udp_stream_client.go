@@ -75,7 +75,9 @@ func (c *Client) openUDPStreamTo(parent context.Context, endpoint *url.URL) (str
 	}
 	req.Header.Set("Proxy-Authorization", basicAuth(c.Username, c.Password))
 	req.Header.Set("Content-Type", "application/octet-stream")
-	c.requestProtocol(req, "udp-stream-v2")
+	if err := c.requestProtocol(req, "udp-stream-v2"); err != nil {
+		return nil, err
+	}
 	budget := c.ConnectTimeout
 	if budget <= 0 {
 		budget = 15 * time.Second
@@ -96,6 +98,9 @@ func (c *Client) openUDPStreamTo(parent context.Context, endpoint *url.URL) (str
 		return nil, &UDPResponseError{HTTPStatus: response.StatusCode, Streaming: true}
 	}
 	if err := c.verifyProtocol(response, "udp-stream-v2"); err != nil {
+		return nil, err
+	}
+	if err := c.verifyProbeConfirmation(req, response); err != nil {
 		return nil, err
 	}
 	keep = true

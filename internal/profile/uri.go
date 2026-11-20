@@ -17,6 +17,7 @@ import (
 	"github.com/SawaMEN/VetroffProxy/internal/cluster"
 	"github.com/SawaMEN/VetroffProxy/internal/contract"
 	"github.com/SawaMEN/VetroffProxy/internal/i18n"
+	"github.com/SawaMEN/VetroffProxy/internal/stealth"
 	"github.com/SawaMEN/VetroffProxy/internal/tlsidentity"
 	"github.com/SawaMEN/VetroffProxy/internal/xhttp"
 )
@@ -25,25 +26,30 @@ const Scheme = "vetroff"
 const MaxLinkBytes = 16 << 10
 
 type Config struct {
-	ProtocolPolicy contract.ProtocolPolicy `json:"protocol_policy,omitempty"`
-	XHTTPPath      string                  `json:"xhttp_path,omitempty"`
-	XHTTPHost      string                  `json:"xhttp_host,omitempty"`
-	Version        int                     `json:"v"`
-	Servers        []string                `json:"servers"`
-	Username       string                  `json:"username"`
-	Password       string                  `json:"password"`
-	Transport      string                  `json:"transport,omitempty"`
-	TLSBackend     string                  `json:"tls,omitempty"`
-	SNI            string                  `json:"sni,omitempty"`
-	PinSHA256      string                  `json:"pin_sha256,omitempty"`
-	Encryption     string                  `json:"encryption,omitempty"`
-	Balance        string                  `json:"balance,omitempty"`
-	Bond           bool                    `json:"bond,omitempty"`
-	Discover       bool                    `json:"discover,omitempty"`
-	Pipeline       string                  `json:"pipeline,omitempty"`
-	Padding        bool                    `json:"padding,omitempty"`
-	ConnectTimeout string                  `json:"connect_timeout,omitempty"`
-	AttemptTimeout string                  `json:"attempt_timeout,omitempty"`
+	ProtocolPolicy        contract.ProtocolPolicy `json:"protocol_policy,omitempty"`
+	XHTTPPath             string                  `json:"xhttp_path,omitempty"`
+	XHTTPHost             string                  `json:"xhttp_host,omitempty"`
+	Version               int                     `json:"v"`
+	Servers               []string                `json:"servers"`
+	Username              string                  `json:"username"`
+	Password              string                  `json:"password"`
+	Transport             string                  `json:"transport,omitempty"`
+	TLSBackend            string                  `json:"tls,omitempty"`
+	SNI                   string                  `json:"sni,omitempty"`
+	PinSHA256             string                  `json:"pin_sha256,omitempty"`
+	Encryption            string                  `json:"encryption,omitempty"`
+	Balance               string                  `json:"balance,omitempty"`
+	Bond                  bool                    `json:"bond,omitempty"`
+	Discover              bool                    `json:"discover,omitempty"`
+	Pipeline              string                  `json:"pipeline,omitempty"`
+	Padding               bool                    `json:"padding,omitempty"`
+	AdaptivePadding       bool                    `json:"adaptive_padding,omitempty"`
+	ProbeKey              string                  `json:"probe_key,omitempty"`
+	AdaptiveFragmentation bool                    `json:"adaptive_fragmentation,omitempty"`
+	TrafficShaping        bool                    `json:"traffic_shaping,omitempty"`
+	TimingJitter          string                  `json:"timing_jitter,omitempty"`
+	ConnectTimeout        string                  `json:"connect_timeout,omitempty"`
+	AttemptTimeout        string                  `json:"attempt_timeout,omitempty"`
 }
 
 func invalid() error { return errors.New(i18n.Text("invalid vetroff connection link")) }
@@ -120,10 +126,25 @@ func (c *Config) normalize() error {
 	if c.Pipeline != "auto" && c.Pipeline != "4" && c.Pipeline != "8" {
 		return invalid()
 	}
+	if c.Padding && c.AdaptivePadding {
+		return invalid()
+	}
+	if _, err := stealth.ParseTimingJitter(c.TimingJitter, c.AdaptivePadding); err != nil {
+		return invalid()
+	}
+	if stealth.ValidateFragmentation(c.AdaptiveFragmentation, c.AdaptivePadding) != nil {
+		return invalid()
+	}
+	if stealth.ValidateTrafficShaping(c.TrafficShaping, c.AdaptivePadding) != nil {
+		return invalid()
+	}
+	if stealth.ValidateProbeKey(c.ProbeKey, c.ProtocolPolicy == contract.ProtocolStrict) != nil {
+		return invalid()
+	}
 	if c.Discover && (!c.Bond || len(c.Servers) != 1) {
 		return invalid()
 	}
-	if c.Bond && ((!c.Discover && len(c.Servers) < 2) || c.Padding || c.Balance == "adaptive") {
+	if c.Bond && ((!c.Discover && len(c.Servers) < 2) || c.Padding || c.AdaptivePadding || c.Balance == "adaptive") {
 		return invalid()
 	}
 	if c.ConnectTimeout == "" {
@@ -192,7 +213,7 @@ func uniqueFields(data []byte) bool {
 		return false
 	}
 	seen := make(map[string]bool)
-	allowed := map[string]bool{"v": true, "servers": true, "username": true, "password": true, "tls": true, "transport": true, "xhttp_path": true, "xhttp_host": true, "sni": true, "pin_sha256": true, "encryption": true, "balance": true, "bond": true, "discover": true, "pipeline": true, "padding": true, "connect_timeout": true, "attempt_timeout": true}
+	allowed := map[string]bool{"v": true, "servers": true, "username": true, "password": true, "tls": true, "transport": true, "xhttp_path": true, "xhttp_host": true, "sni": true, "pin_sha256": true, "encryption": true, "balance": true, "bond": true, "discover": true, "pipeline": true, "padding": true, "adaptive_padding": true, "adaptive_fragmentation": true, "traffic_shaping": true, "timing_jitter": true, "probe_key": true, "connect_timeout": true, "attempt_timeout": true}
 	allowed["protocol_policy"] = true
 	for decoder.More() {
 		token, err := decoder.Token()

@@ -19,6 +19,7 @@ import (
 	"github.com/SawaMEN/VetroffProxy/internal/h2profile"
 	"github.com/SawaMEN/VetroffProxy/internal/nodeperf"
 	"github.com/SawaMEN/VetroffProxy/internal/nsstls"
+	"github.com/SawaMEN/VetroffProxy/internal/stealth"
 	"github.com/SawaMEN/VetroffProxy/internal/transportengine"
 	"github.com/SawaMEN/VetroffProxy/internal/tunnel"
 	"github.com/SawaMEN/VetroffProxy/internal/xhttp"
@@ -29,6 +30,9 @@ const HTTP2ReceiveFirefox158 = h2profile.Firefox158
 
 // TLSClientFirefox158 opts into measured preferences on pinned NSS 3.130.
 const TLSClientFirefox158 = nsstls.Firefox158
+
+// BrowserProfileFirefox158 opts into the pinned NSS+H2 preferences, H2 only.
+const BrowserProfileFirefox158 = transportengine.BrowserFirefox158
 
 // ErrProtocolNegotiation identifies missing or incompatible wire confirmation.
 var ErrProtocolNegotiation = tunnel.ErrProtocolNegotiation
@@ -49,32 +53,38 @@ type ClientConfig struct {
 	// False preserves builtin interoperability. Configure both ends explicitly.
 	RequireProtocolNegotiation bool
 
-	ServerURL            string
-	Credentials          Credentials
-	CACertFile           string
-	Engine               string // Empty/builtin preserves old selection; auto uses Necko when compatible, otherwise NSS/Neqo or Go; mozilla and necko force a backend.
-	TLSBackend           string // Empty selects auto (NSS for TCP if available, Go for default H3); Neqo uses NSS.
-	Transport            string // Empty selects h2-connect.
-	QUICBackend          string // Empty/quic-go preserves the default; neqo is an opt-in build.
-	H3Fallback           string // Empty/none or h2; only before a Neqo HTTP request is created.
-	QUICHandshakeTimeout time.Duration
-	ServerName, SPKIPin  string
-	NodePinsFile         string // Owner-only per-origin trust file; configure all explicit nodes.
-	XHTTPPath, XHTTPHost string
-	HTTP2ReceiveProfile  string
-	TLSClientProfile     string // Local opt-in NSS preferences; empty keeps the default.
-	Padding              bool
-	EnableUDP            bool // Experimental datagram API and SOCKS5 UDP; off by default.
-	UDPMultiNode         bool // Pin destination flows to configured UDP exits.
-	UDPStreaming         bool // Opt-in v2 persistent UDP stream; requires EnableUDP.
-	ConnectTimeout       time.Duration
-	MaxConnections       int // Combined TCP/UDP connections and pending operations; 0 uses 256.
-	FallbackServers      []string
+	ServerURL              string
+	Credentials            Credentials
+	CACertFile             string
+	Engine                 string // Empty/builtin preserves old selection; auto uses Necko when compatible, otherwise NSS/Neqo or Go; mozilla and necko force a backend.
+	BrowserProfile         string // Experimental local TLS/H2 preset: firefox-158; requires NSS, fails closed.
+	TLSBackend             string // Empty selects auto (NSS for TCP if available, Go for default H3); Neqo uses NSS.
+	Transport              string // Empty selects h2-connect.
+	QUICBackend            string // Empty/quic-go preserves the default; neqo is an opt-in build.
+	H3Fallback             string // Empty/none or h2; only before a Neqo HTTP request is created.
+	QUICHandshakeTimeout   time.Duration
+	ServerName, SPKIPin    string
+	NodePinsFile           string // Owner-only per-origin trust file; configure all explicit nodes.
+	XHTTPPath, XHTTPHost   string
+	HTTP2ReceiveProfile    string
+	TLSClientProfile       string // Local opt-in NSS preferences; empty keeps the default.
+	Padding                bool
+	AdaptivePadding        bool          // Continuous bounded framing; requires matching server support.
+	ProbeKey               string        // 32-byte base64url probe secret; requires strict negotiation.
+	AdaptiveFragmentation  bool          // Opt-in inner adaptive-v1 record size variation.
+	TrafficShaping         bool          // Bound zero-fill padding to one-eighth of useful bytes.
+	TimingJitter           time.Duration // Per-small-record maximum delay (0..5ms); requires adaptive padding.
+	EnableUDP              bool          // Experimental datagram API and SOCKS5 UDP; off by default.
+	UDPMultiNode           bool          // Pin destination flows to configured UDP exits.
+	UDPStreaming           bool          // Opt-in v2 persistent UDP stream; requires EnableUDP.
+	ConnectTimeout         time.Duration
+	MaxConnections         int // Combined TCP/UDP connections and pending operations; 0 uses 256.
+	FallbackServers        []string
 	FallbackAttemptTimeout time.Duration
-	Balance              string // Empty preserves failover; adaptive enables passive-metric route selection.
-	Bond                 bool   // Bond lanes across explicitly trusted servers.
-	BondDiscover         bool   // Discover lanes from the primary server.
-	BondPipeline         int    // 0 (auto), 4 or 8.
+	Balance                string // Empty preserves failover; adaptive enables passive-metric route selection.
+	Bond                   bool   // Bond lanes across explicitly trusted servers.
+	BondDiscover           bool   // Discover lanes from the primary server.
+	BondPipeline           int    // 0 (auto), 4 or 8.
 }
 
 // Client is configured at construction and may be shared by concurrent callers.
@@ -92,10 +102,25 @@ type Client struct {
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
+	if err := stealth.ValidateTimingJitter(config.TimingJitter, config.AdaptivePadding); err != nil {
+		return nil, err
+	}
+	if err := stealth.ValidateFragmentation(config.AdaptiveFragmentation, config.AdaptivePadding); err != nil {
+		return nil, err
+	}
+	if err := stealth.ValidateTrafficShaping(config.TrafficShaping, config.AdaptivePadding); err != nil {
+		return nil, err
+	}
+	if err := stealth.ValidateProbeKey(config.ProbeKey, config.RequireProtocolNegotiation); err != nil {
+		return nil, err
+	}
+	if config.Padding && config.AdaptivePadding {
+		return nil, errors.New("initial and adaptive padding are mutually exclusive")
+	}
 	if config.MaxConnections < 0 || config.ConnectTimeout < 0 || config.FallbackAttemptTimeout < 0 {
 		return nil, errors.New("negative client limit or timeout")
 	}
-	if config.BondDiscover && !config.Bond || config.Bond && config.EnableUDP ||
+	if config.BondDiscover && !config.Bond || config.Bond && (config.EnableUDP || config.Padding || config.AdaptivePadding) ||
 		(config.BondPipeline != 0 && config.BondPipeline != 4 && config.BondPipeline != 8) {
 		return nil, errors.New("invalid bond or UDP combination")
 	}
@@ -119,7 +144,8 @@ func NewClient(config ClientConfig) (*Client, error) {
 	}()
 	plan, err := transportengine.Resolve(transportengine.Config{
 		Engine: config.Engine, Transport: config.Transport, NeckoBundle: config.NeckoBundle,
-		AutoNeckoExcluded: ((config.RequireProtocolNegotiation || config.Padding) && !transportengine.NativeHTTPHeaders(config.Transport)),
+		BrowserProfile:    config.BrowserProfile,
+		AutoNeckoExcluded: ((config.RequireProtocolNegotiation || config.Padding || config.AdaptivePadding) && !transportengine.NativeHTTPHeaders(config.Transport)),
 		TLSBackend:        config.TLSBackend, QUICBackend: config.QUICBackend,
 		H3Fallback: config.H3Fallback, QUICHandshakeTimeout: config.QUICHandshakeTimeout,
 		TLSClientProfile: config.TLSClientProfile, HTTP2ReceiveProfile: config.HTTP2ReceiveProfile,
@@ -157,6 +183,11 @@ func NewClient(config ClientConfig) (*Client, error) {
 	core.FallbackAttemptTimeout = config.FallbackAttemptTimeout
 	core.BondPipeline = config.BondPipeline
 	core.Padding = config.Padding
+	core.AdaptivePadding = config.AdaptivePadding
+	core.ProbeKey = config.ProbeKey
+	core.AdaptiveFragmentation = config.AdaptiveFragmentation
+	core.TrafficShaping = config.TrafficShaping
+	core.TimingJitter = config.TimingJitter
 	core.EnableUDP = config.EnableUDP
 	core.UDPStreaming = config.UDPStreaming
 	core.UDPMultiNode = config.UDPMultiNode
@@ -166,7 +197,9 @@ func NewClient(config ClientConfig) (*Client, error) {
 		} else {
 			err = core.EnableBond()
 		}
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err := core.Prepare(context.Background()); err != nil {
 		return nil, err
@@ -375,7 +408,12 @@ type ServerConfig struct {
 	MaxTunnels               int  // 0 uses 256.
 	DialTimeout              time.Duration
 	Padding                  bool
-	Cover                    http.Handler // Public site for ordinary/rejected requests; nil returns 404.
+	AdaptivePadding          bool          // Accept opt-in adaptive-v1 mode alongside initial-v1.
+	ProbeKey                 string        // Fresh per-request HMAC proof secret; strict policy only.
+	AdaptiveFragmentation    bool          // Opt-in inner adaptive-v1 record size variation.
+	TrafficShaping           bool          // Bound downlink zero-fill padding to one-eighth.
+	TimingJitter             time.Duration // Max 5ms; only on small adaptive downlink records.
+	Cover                    http.Handler  // Public site for ordinary/rejected requests; nil returns 404.
 }
 
 // Server is an http.Handler for verified TLS 1.3 with HTTP/2 enabled by the host.
@@ -383,6 +421,18 @@ type ServerConfig struct {
 type Server struct{ core *tunnel.Server }
 
 func NewServer(config ServerConfig) (*Server, error) {
+	if err := stealth.ValidateTimingJitter(config.TimingJitter, config.AdaptivePadding); err != nil {
+		return nil, err
+	}
+	if err := stealth.ValidateFragmentation(config.AdaptiveFragmentation, config.AdaptivePadding); err != nil {
+		return nil, err
+	}
+	if err := stealth.ValidateTrafficShaping(config.TrafficShaping, config.AdaptivePadding); err != nil {
+		return nil, err
+	}
+	if err := stealth.ValidateProbeKey(config.ProbeKey, config.RequireProtocolNegotiation); err != nil {
+		return nil, err
+	}
 	if (config.Access == nil && !authheader.ValidCredentials(config.Credentials.Username, config.Credentials.Password)) || (config.Access != nil && (config.Credentials.Username != "" || config.Credentials.Password != "")) {
 		return nil, errors.New("server credentials required")
 	}
@@ -397,7 +447,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{core: &tunnel.Server{Egress: exit, RequireProtocolNegotiation: config.RequireProtocolNegotiation, Access: config.Access, Username: config.Credentials.Username, Password: config.Credentials.Password, XHTTPSettings: settings, AllowPrivate: config.AllowPrivateDestinations, EnableUDP: config.EnableUDP, MaxTunnels: config.MaxTunnels, DialTimeout: config.DialTimeout, Padding: config.Padding, Cover: config.Cover}}, nil
+	return &Server{core: &tunnel.Server{Egress: exit, RequireProtocolNegotiation: config.RequireProtocolNegotiation, Access: config.Access, Username: config.Credentials.Username, Password: config.Credentials.Password, XHTTPSettings: settings, AllowPrivate: config.AllowPrivateDestinations, EnableUDP: config.EnableUDP, MaxTunnels: config.MaxTunnels, DialTimeout: config.DialTimeout, Padding: config.Padding, AdaptivePadding: config.AdaptivePadding, ProbeKey: config.ProbeKey, AdaptiveFragmentation: config.AdaptiveFragmentation, TrafficShaping: config.TrafficShaping, TimingJitter: config.TimingJitter, Cover: config.Cover}}, nil
 }
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.TLS == nil || r.TLS.Version < tls.VersionTLS13 {

@@ -55,9 +55,13 @@ func (c *Client) DialContext(ctx context.Context, network, address string) (net.
 	conn := &streamConn{up: up, down: down, upPeer: upPeer, downPeer: downPeer, stream: stream, cancel: cancel, remote: virtualAddr(address)}
 	var upload io.Writer = stream.writer
 	var download io.Reader = stream.response.Body
-	if c.Padding {
+	switch c.paddingMode() {
+	case paddingVersion:
 		upload = newPaddingWriter(upload)
 		download = newPaddingReader(download)
+	case adaptivePaddingVersion:
+		upload = newShapedAdaptivePaddingWriter(upload, lifetime, c.TimingJitter, c.AdaptiveFragmentation, c.TrafficShaping)
+		download = newAdaptivePaddingReader(download)
 	}
 	go func() {
 		_, err := fastCopy(upload, upPeer)
