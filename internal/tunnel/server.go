@@ -46,6 +46,8 @@ type Server struct {
 	Padding bool
 	// AdaptivePadding enables the optional adaptive-v1 framed CONNECT mode.
 	AdaptivePadding bool
+	// AdaptiveFragmentation varies inner adaptive-v1 downlink record sizes.
+	AdaptiveFragmentation bool
 	// TimingJitter limits optional delays on small adaptive downlink records.
 	TimingJitter time.Duration
 	// MaxTunnels bounds authenticated dialing/relay work across this Server.
@@ -180,7 +182,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		outgoing = newPaddingWriter(outgoing)
 	case adaptivePaddingVersion:
 		incoming = newAdaptivePaddingReader(r.Body)
-		outgoing = newTimedAdaptivePaddingWriter(outgoing, r.Context(), s.TimingJitter)
+		outgoing = newShapedAdaptivePaddingWriter(outgoing, r.Context(), s.TimingJitter, s.AdaptiveFragmentation)
 	}
 	incomingDone := make(chan struct{})
 	go func() {

@@ -68,6 +68,8 @@ type Client struct {
 	// AdaptivePadding enables continuous bounded frame padding (adaptive-v1).
 	// Mutually exclusive with Padding; configure before Serve.
 	AdaptivePadding bool
+	// AdaptiveFragmentation varies only inner adaptive-v1 record sizes.
+	AdaptiveFragmentation bool
 	// TimingJitter adds at most 5ms delay to small adaptive records.
 	// Zero leaves all writes immediate; configure before Serve.
 	TimingJitter time.Duration
@@ -367,7 +369,7 @@ func (c *Client) handleContext(ctx context.Context, conn net.Conn) {
 		upload = newPaddingWriter(writer)
 		download = newPaddingReader(resp.Body)
 	case adaptivePaddingVersion:
-		upload = newTimedAdaptivePaddingWriter(writer, ctx, c.TimingJitter)
+		upload = newShapedAdaptivePaddingWriter(writer, ctx, c.TimingJitter, c.AdaptiveFragmentation)
 		download = newAdaptivePaddingReader(resp.Body)
 	}
 	if err := socks5Reply(conn, 0x00); err != nil {

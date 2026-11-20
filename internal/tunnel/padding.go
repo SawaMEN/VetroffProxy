@@ -75,7 +75,25 @@ func newAdaptivePaddingWriter(w io.Writer) *paddingWriter {
 // small application frames. Large records, disabled mode and both half-closes
 // retain their existing behavior. Jitter is local and does not alter the wire.
 func newTimedAdaptivePaddingWriter(w io.Writer, ctx context.Context, maxDelay time.Duration) *paddingWriter {
-	return &paddingWriter{writer: w, adaptive: true, ctx: ctx, jitter: maxDelay}
+	return newShapedAdaptivePaddingWriter(w, ctx, maxDelay, false)
+}
+
+// Fragmentation changes only inner adaptive-v1 record boundaries. A peer
+// already using adaptive-v1 can decode the resulting bounded records.
+func newShapedAdaptivePaddingWriter(w io.Writer, ctx context.Context, maxDelay time.Duration, fragment bool) *paddingWriter {
+	return &paddingWriter{writer: w, adaptive: true, ctx: ctx, jitter: maxDelay, fragment: fragment}
+}
+
+func (w *paddingWriter) nextPayloadSize(remaining int) (int, error) {
+	if !w.adaptive || !w.fragment || remaining <= stealth.MaxFragmentSize {
+		return min(remaining, maxPaddingPayload), nil
+	}
+	var draw [2]byte
+	if _, err := io.ReadFull(rand.Reader, draw[:]); err != nil {
+		return 0, err
+	}
+	span := stealth.MaxFragmentSize - stealth.MinFragmentSize + 1
+	return stealth.MinFragmentSize + int(binary.BigEndian.Uint16(draw[:]))%span, nil
 }
 
 func timingJitterDelay(sample byte, maxDelay time.Duration) time.Duration {
@@ -122,6 +140,7 @@ type paddingWriter struct {
 	adaptive bool
 	ctx      context.Context
 	jitter   time.Duration
+	fragment bool
 	err      error
 }
 
@@ -142,6 +161,9 @@ func (w *paddingWriter) Write(p []byte) (int, error) {
 	buffer := paddingBuffers.Get().(*[paddingBufferSize]byte)
 	defer paddingBuffers.Put(buffer)
 	total := 0
+	// Only an originally small application write can incur timing jitter.
+	// A small tail of an intentionally fragmented bulk write must not.
+	interactive := len(p) <= stealth.SmallRecordLimit
 	for len(p) > 0 && (w.records > 0 || w.adaptive) {
 		// One random byte selects a padding length, without a persistent PRNG
 		// seed. Randomness failure aborts rather than weakening the mode.
@@ -149,7 +171,11 @@ func (w *paddingWriter) Write(p []byte) (int, error) {
 			w.err = err
 			return total, err
 		}
-		n := min(len(p), maxPaddingPayload)
+		n, err := w.nextPayloadSize(len(p))
+		if err != nil {
+			w.err = err
+			return total, err
+		}
 		pad := int(buffer[2])
 		if w.adaptive {
 			// Limit added traffic for large records; no unnecessary delays.
@@ -161,9 +187,11 @@ func (w *paddingWriter) Write(p []byte) (int, error) {
 		// A pooled buffer can contain another stream's plaintext. Never transmit it
 		// as padding. Padding is zero-filled inside the encrypted TLS connection.
 		clear(buffer[3+n : 3+n+pad])
-		if err := w.delaySmallRecord(n); err != nil {
-			w.err = err
-			return total, err
+		if interactive {
+			if err := w.delaySmallRecord(n); err != nil {
+				w.err = err
+				return total, err
+			}
 		}
 		if err := writePaddingFrame(w.writer, buffer[:3+n+pad]); err != nil {
 			w.err = err
