@@ -7,9 +7,9 @@ import (
 
 func TestAdaptiveFragmentationValidation(t *testing.T) {
 	for _, tc := range []struct {
-		enabled bool
+		enabled  bool
 		adaptive bool
-		ok bool
+		ok       bool
 	}{
 		{false, false, true},
 		{false, true, true},

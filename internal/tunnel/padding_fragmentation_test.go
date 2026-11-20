@@ -28,7 +28,7 @@ func TestAdaptiveFragmentationWireAndOverhead(t *testing.T) {
 		if len(encoded)-offset < 3 {
 			t.Fatal("truncated frame header")
 		}
-		size := int(binary.BigEndian.Uint16(encoded[offset:offset+2]))
+		size := int(binary.BigEndian.Uint16(encoded[offset : offset+2]))
 		pad := int(encoded[offset+2])
 		offset += 3
 		if size <= 0 || size > stealth.MaxFragmentSize || pad > adaptivePaddingLimit(size) {
@@ -40,7 +40,7 @@ func TestAdaptiveFragmentationWireAndOverhead(t *testing.T) {
 		if size < stealth.MinFragmentSize && offset+size+pad != len(encoded) {
 			t.Fatalf("unexpected sub-minimum intermediate fragment: %d", size)
 		}
-		offset += size+pad
+		offset += size + pad
 		frames++
 	}
 	if frames < 50 || offset != len(encoded) {
@@ -82,7 +82,7 @@ func TestAdaptiveFragmentationSmallWritesRemainSingleFrame(t *testing.T) {
 
 func TestAdaptiveFragmentationSOCKSPeerCompatibility(t *testing.T) {
 	for _, tc := range []struct {
-		name string
+		name           string
 		client, server bool
 	}{
 		{"shaped upload to legacy adaptive peer", true, false},

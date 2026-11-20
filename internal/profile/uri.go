@@ -26,28 +26,28 @@ const Scheme = "vetroff"
 const MaxLinkBytes = 16 << 10
 
 type Config struct {
-	ProtocolPolicy  contract.ProtocolPolicy `json:"protocol_policy,omitempty"`
-	XHTTPPath       string                  `json:"xhttp_path,omitempty"`
-	XHTTPHost       string                  `json:"xhttp_host,omitempty"`
-	Version         int                     `json:"v"`
-	Servers         []string                `json:"servers"`
-	Username        string                  `json:"username"`
-	Password        string                  `json:"password"`
-	Transport       string                  `json:"transport,omitempty"`
-	TLSBackend      string                  `json:"tls,omitempty"`
-	SNI             string                  `json:"sni,omitempty"`
-	PinSHA256       string                  `json:"pin_sha256,omitempty"`
-	Encryption      string                  `json:"encryption,omitempty"`
-	Balance         string                  `json:"balance,omitempty"`
-	Bond            bool                    `json:"bond,omitempty"`
-	Discover        bool                    `json:"discover,omitempty"`
-	Pipeline        string                  `json:"pipeline,omitempty"`
-	Padding         bool                    `json:"padding,omitempty"`
-	AdaptivePadding bool                    `json:"adaptive_padding,omitempty"`
-	AdaptiveFragmentation bool             `json:"adaptive_fragmentation,omitempty"`
-	TimingJitter    string                  `json:"timing_jitter,omitempty"`
-	ConnectTimeout  string                  `json:"connect_timeout,omitempty"`
-	AttemptTimeout  string                  `json:"attempt_timeout,omitempty"`
+	ProtocolPolicy        contract.ProtocolPolicy `json:"protocol_policy,omitempty"`
+	XHTTPPath             string                  `json:"xhttp_path,omitempty"`
+	XHTTPHost             string                  `json:"xhttp_host,omitempty"`
+	Version               int                     `json:"v"`
+	Servers               []string                `json:"servers"`
+	Username              string                  `json:"username"`
+	Password              string                  `json:"password"`
+	Transport             string                  `json:"transport,omitempty"`
+	TLSBackend            string                  `json:"tls,omitempty"`
+	SNI                   string                  `json:"sni,omitempty"`
+	PinSHA256             string                  `json:"pin_sha256,omitempty"`
+	Encryption            string                  `json:"encryption,omitempty"`
+	Balance               string                  `json:"balance,omitempty"`
+	Bond                  bool                    `json:"bond,omitempty"`
+	Discover              bool                    `json:"discover,omitempty"`
+	Pipeline              string                  `json:"pipeline,omitempty"`
+	Padding               bool                    `json:"padding,omitempty"`
+	AdaptivePadding       bool                    `json:"adaptive_padding,omitempty"`
+	AdaptiveFragmentation bool                    `json:"adaptive_fragmentation,omitempty"`
+	TimingJitter          string                  `json:"timing_jitter,omitempty"`
+	ConnectTimeout        string                  `json:"connect_timeout,omitempty"`
+	AttemptTimeout        string                  `json:"attempt_timeout,omitempty"`
 }
 
 func invalid() error { return errors.New(i18n.Text("invalid vetroff connection link")) }
