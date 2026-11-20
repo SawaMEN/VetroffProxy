@@ -29,6 +29,32 @@ Go-сборка использует Go TLS/quic-go. Полный Linux-архи
 Necko поддерживает TCP H2/H3 CONNECT и UDP v1 через H2. UDP streaming, multi-node,
 Bond, XHTTP, strict-policy и другие неподдерживаемые сочетания требуют другого backend.
 
+
+## Экспериментальный профиль браузера Firefox (Stealth stage 2)
+
+Опциональный флаг клиента `--browser-profile firefox-158` выбирает **только**
+документированные измеренные настройки TLS и HTTP/2 Firefox 158. Он требует
+Linux-сборку с NSS и применяет `--engine mozilla`, NSS TLS,
+`--tls-client-profile firefox-158` и `--h2-receive-profile firefox-158`.
+Поддерживаются лишь `h2-connect` и `h2-post`; остальные транспорты,
+несовместимый backend и неизвестные профили отвергаются без перехода на Go TLS.
+
+Пример (сервер с адаптивным дополнением должен быть уже настроен):
+
+```sh
+./vetroff client --server https://vpn.example.com \\
+  --engine mozilla --transport h2-connect --browser-profile firefox-158 \\
+  --adaptive-padding --protocol-policy strict
+```
+
+Дополнение `adaptive-v1` и профиль браузера независимы; первый требует обновления
+обоих peers, второй — только корректной native Linux-сборки клиента. Флаг профиля
+не сериализуется в `vetroff://` ссылку: это локальный выбор установленного
+клиентского движка. Настройки NSS и H2 **не** воспроизводят Necko/Firefox целиком:
+CONNECT, HTTP-заголовки, порядок запросов, тайминги, HTTP/3/QUIC и TCP
+характеристики могут оставаться отличительными. Достоверный вывод об обходе DPI
+возможен только после сравнения пакетных трасс на реальной сети.
+
 ## UDP
 
 Добавьте `--enable-udp` при `setup` и запуске клиента. Для постоянной ассоциации
