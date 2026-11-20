@@ -19,6 +19,7 @@ import (
 	"github.com/SawaMEN/VetroffProxy/internal/h2profile"
 	"github.com/SawaMEN/VetroffProxy/internal/nodeperf"
 	"github.com/SawaMEN/VetroffProxy/internal/nsstls"
+	"github.com/SawaMEN/VetroffProxy/internal/stealth"
 	"github.com/SawaMEN/VetroffProxy/internal/transportengine"
 	"github.com/SawaMEN/VetroffProxy/internal/tunnel"
 	"github.com/SawaMEN/VetroffProxy/internal/xhttp"
@@ -69,6 +70,7 @@ type ClientConfig struct {
 	TLSClientProfile       string // Local opt-in NSS preferences; empty keeps the default.
 	Padding                bool
 	AdaptivePadding        bool // Continuous bounded framing; requires matching server support.
+	TimingJitter           time.Duration // Per-small-record maximum delay (0..5ms); requires adaptive padding.
 	EnableUDP              bool // Experimental datagram API and SOCKS5 UDP; off by default.
 	UDPMultiNode           bool // Pin destination flows to configured UDP exits.
 	UDPStreaming           bool // Opt-in v2 persistent UDP stream; requires EnableUDP.
@@ -97,6 +99,9 @@ type Client struct {
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
+	if err := stealth.ValidateTimingJitter(config.TimingJitter, config.AdaptivePadding); err != nil {
+		return nil, err
+	}
 	if config.Padding && config.AdaptivePadding {
 		return nil, errors.New("initial and adaptive padding are mutually exclusive")
 	}
@@ -167,6 +172,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 	core.BondPipeline = config.BondPipeline
 	core.Padding = config.Padding
 	core.AdaptivePadding = config.AdaptivePadding
+	core.TimingJitter = config.TimingJitter
 	core.EnableUDP = config.EnableUDP
 	core.UDPStreaming = config.UDPStreaming
 	core.UDPMultiNode = config.UDPMultiNode
@@ -388,6 +394,7 @@ type ServerConfig struct {
 	DialTimeout              time.Duration
 	Padding                  bool
 	AdaptivePadding          bool         // Accept opt-in adaptive-v1 mode alongside initial-v1.
+	TimingJitter             time.Duration // Max 5ms; only on small adaptive downlink records.
 	Cover                    http.Handler // Public site for ordinary/rejected requests; nil returns 404.
 }
 
@@ -396,6 +403,9 @@ type ServerConfig struct {
 type Server struct{ core *tunnel.Server }
 
 func NewServer(config ServerConfig) (*Server, error) {
+	if err := stealth.ValidateTimingJitter(config.TimingJitter, config.AdaptivePadding); err != nil {
+		return nil, err
+	}
 	if (config.Access == nil && !authheader.ValidCredentials(config.Credentials.Username, config.Credentials.Password)) || (config.Access != nil && (config.Credentials.Username != "" || config.Credentials.Password != "")) {
 		return nil, errors.New("server credentials required")
 	}
@@ -410,7 +420,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{core: &tunnel.Server{Egress: exit, RequireProtocolNegotiation: config.RequireProtocolNegotiation, Access: config.Access, Username: config.Credentials.Username, Password: config.Credentials.Password, XHTTPSettings: settings, AllowPrivate: config.AllowPrivateDestinations, EnableUDP: config.EnableUDP, MaxTunnels: config.MaxTunnels, DialTimeout: config.DialTimeout, Padding: config.Padding, AdaptivePadding: config.AdaptivePadding, Cover: config.Cover}}, nil
+	return &Server{core: &tunnel.Server{Egress: exit, RequireProtocolNegotiation: config.RequireProtocolNegotiation, Access: config.Access, Username: config.Credentials.Username, Password: config.Credentials.Password, XHTTPSettings: settings, AllowPrivate: config.AllowPrivateDestinations, EnableUDP: config.EnableUDP, MaxTunnels: config.MaxTunnels, DialTimeout: config.DialTimeout, Padding: config.Padding, AdaptivePadding: config.AdaptivePadding, TimingJitter: config.TimingJitter, Cover: config.Cover}}, nil
 }
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.TLS == nil || r.TLS.Version < tls.VersionTLS13 {
