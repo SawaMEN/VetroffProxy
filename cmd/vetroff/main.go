@@ -355,6 +355,10 @@ func main() {
 		padding := fs.Bool("padding", false, i18n.Text("require experimental initial-record padding (server must enable it)"))
 		adaptivePadding := fs.Bool("adaptive-padding", false, "require adaptive-v1 continuous padding (server must enable it)")
 		neckoBundle := fs.String("necko-bundle", "", "verified Necko bundle directory (with --engine necko)")
+		browserProfile := new(string)
+		if os.Args[1] == "client" {
+			fs.StringVar(browserProfile, "browser-profile", "", "pinned native NSS/H2 browser profile: firefox-158 (not full Firefox equivalence)")
+		}
 		engine := new(string)
 		if os.Args[1] == "client" {
 			defaultEngine := "builtin"
@@ -552,6 +556,7 @@ func main() {
 		failClient := func(v ...any) { client.Close(); log.Fatal(v...) }
 		intent := transportengine.Config{
 			Engine: *engine, Transport: *nativeTransport, NeckoBundle: *neckoBundle,
+			BrowserProfile: *browserProfile,
 			AutoNeckoExcluded: ((wirePolicy == contract.ProtocolStrict || *padding || *adaptivePadding) && !transportengine.NativeHTTPHeaders(*nativeTransport)),
 			TLSBackend:        *tlsBackend, QUICBackend: *quicBackend,
 			H3Fallback: *h3Fallback, QUICHandshakeTimeout: *quicTimeout,
