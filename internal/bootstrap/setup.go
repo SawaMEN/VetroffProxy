@@ -39,6 +39,7 @@ type ServerConfig struct {
 	EnableUDP             bool                    `json:"enable_udp,omitempty"`
 	AdaptivePadding       bool                    `json:"adaptive_padding,omitempty"`
 	AdaptiveFragmentation bool                    `json:"adaptive_fragmentation,omitempty"`
+	TrafficShaping        bool                    `json:"traffic_shaping,omitempty"`
 	TimingJitter          string                  `json:"timing_jitter,omitempty"`
 	Listen                string                  `json:"listen"`
 	Certificate           string                  `json:"cert"`
@@ -59,7 +60,7 @@ type Options struct {
 	ProtocolPolicy                                                                                  contract.ProtocolPolicy
 	Server, Certificate, PrivateKey, Output, SNI, CACertFile, JoinLinkFile, UpstreamCAFile, WebRoot string
 	TLSBackend, Transport, XHTTPPath, XHTTPHost                                                     string
-	EnableUDP, AdaptivePadding, AdaptiveFragmentation                                               bool
+	EnableUDP, AdaptivePadding, AdaptiveFragmentation, TrafficShaping                              bool
 	TimingJitter                                                                                    time.Duration
 }
 
@@ -93,6 +94,9 @@ func ReadServer(path string) (ServerConfig, error) {
 		return ServerConfig{}, ErrConfig
 	}
 	if stealth.ValidateFragmentation(c.AdaptiveFragmentation, c.AdaptivePadding) != nil {
+		return ServerConfig{}, ErrConfig
+	}
+	if stealth.ValidateTrafficShaping(c.TrafficShaping, c.AdaptivePadding) != nil {
 		return ServerConfig{}, ErrConfig
 	}
 	if c.XHTTPPath != "" || c.XHTTPHost != "" {
@@ -129,6 +133,9 @@ func Generate(o Options) error {
 		return ErrSetup
 	}
 	if stealth.ValidateFragmentation(o.AdaptiveFragmentation, o.AdaptivePadding) != nil {
+		return ErrSetup
+	}
+	if stealth.ValidateTrafficShaping(o.TrafficShaping, o.AdaptivePadding) != nil {
 		return ErrSetup
 	}
 	if o.ProtocolPolicy.Validate() != nil || o.ProtocolPolicy == contract.ProtocolStrict && o.JoinLinkFile != "" || o.AdaptivePadding && o.ProtocolPolicy != contract.ProtocolStrict {
@@ -206,7 +213,7 @@ func Generate(o Options) error {
 		port = "443"
 	}
 	listen := net.JoinHostPort("", port)
-	config := ServerConfig{EnableUDP: o.EnableUDP, AdaptivePadding: o.AdaptivePadding, AdaptiveFragmentation: o.AdaptiveFragmentation, Version: 1, Listen: listen, Certificate: certPath, PrivateKey: keyPath, Username: "vetroff", MaxTunnels: 256, MaxConnections: 512}
+	config := ServerConfig{EnableUDP: o.EnableUDP, AdaptivePadding: o.AdaptivePadding, AdaptiveFragmentation: o.AdaptiveFragmentation, TrafficShaping: o.TrafficShaping, Version: 1, Listen: listen, Certificate: certPath, PrivateKey: keyPath, Username: "vetroff", MaxTunnels: 256, MaxConnections: 512}
 	config.ProtocolPolicy = o.ProtocolPolicy
 	config.TimingJitter = stealth.FormatTimingJitter(o.TimingJitter)
 	var secret [32]byte
@@ -214,7 +221,7 @@ func Generate(o Options) error {
 		return ErrSetup
 	}
 	config.Password = base64.RawURLEncoding.EncodeToString(secret[:])
-	linkConfig := profile.Config{Version: 1, Servers: []string{u.String()}, Username: config.Username, Password: config.Password, SNI: policy.SNI, PinSHA256: policy.PinSHA256, Encryption: "tls13", TLSBackend: o.TLSBackend, Transport: o.Transport, XHTTPPath: o.XHTTPPath, XHTTPHost: o.XHTTPHost, Bond: true, Discover: true, AdaptivePadding: o.AdaptivePadding, AdaptiveFragmentation: o.AdaptiveFragmentation, TimingJitter: stealth.FormatTimingJitter(o.TimingJitter)}
+	linkConfig := profile.Config{Version: 1, Servers: []string{u.String()}, Username: config.Username, Password: config.Password, SNI: policy.SNI, PinSHA256: policy.PinSHA256, Encryption: "tls13", TLSBackend: o.TLSBackend, Transport: o.Transport, XHTTPPath: o.XHTTPPath, XHTTPHost: o.XHTTPHost, Bond: true, Discover: true, AdaptivePadding: o.AdaptivePadding, AdaptiveFragmentation: o.AdaptiveFragmentation, TrafficShaping: o.TrafficShaping, TimingJitter: stealth.FormatTimingJitter(o.TimingJitter)}
 	linkConfig.ProtocolPolicy = o.ProtocolPolicy
 	if o.ProtocolPolicy == contract.ProtocolStrict {
 		linkConfig.Bond, linkConfig.Discover = false, false

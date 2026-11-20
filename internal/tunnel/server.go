@@ -48,6 +48,8 @@ type Server struct {
 	AdaptivePadding bool
 	// AdaptiveFragmentation varies inner adaptive-v1 downlink record sizes.
 	AdaptiveFragmentation bool
+	// TrafficShaping caps cumulative zero-fill padding on downlink frames.
+	TrafficShaping bool
 	// TimingJitter limits optional delays on small adaptive downlink records.
 	TimingJitter time.Duration
 	// MaxTunnels bounds authenticated dialing/relay work across this Server.
@@ -182,7 +184,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		outgoing = newPaddingWriter(outgoing)
 	case adaptivePaddingVersion:
 		incoming = newAdaptivePaddingReader(r.Body)
-		outgoing = newShapedAdaptivePaddingWriter(outgoing, r.Context(), s.TimingJitter, s.AdaptiveFragmentation)
+		outgoing = newShapedAdaptivePaddingWriter(outgoing, r.Context(), s.TimingJitter, s.AdaptiveFragmentation, s.TrafficShaping)
 	}
 	incomingDone := make(chan struct{})
 	go func() {

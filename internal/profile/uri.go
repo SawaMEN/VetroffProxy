@@ -45,6 +45,7 @@ type Config struct {
 	Padding               bool                    `json:"padding,omitempty"`
 	AdaptivePadding       bool                    `json:"adaptive_padding,omitempty"`
 	AdaptiveFragmentation bool                    `json:"adaptive_fragmentation,omitempty"`
+	TrafficShaping        bool                    `json:"traffic_shaping,omitempty"`
 	TimingJitter          string                  `json:"timing_jitter,omitempty"`
 	ConnectTimeout        string                  `json:"connect_timeout,omitempty"`
 	AttemptTimeout        string                  `json:"attempt_timeout,omitempty"`
@@ -133,6 +134,9 @@ func (c *Config) normalize() error {
 	if stealth.ValidateFragmentation(c.AdaptiveFragmentation, c.AdaptivePadding) != nil {
 		return invalid()
 	}
+	if stealth.ValidateTrafficShaping(c.TrafficShaping, c.AdaptivePadding) != nil {
+		return invalid()
+	}
 	if c.Discover && (!c.Bond || len(c.Servers) != 1) {
 		return invalid()
 	}
@@ -205,7 +209,7 @@ func uniqueFields(data []byte) bool {
 		return false
 	}
 	seen := make(map[string]bool)
-	allowed := map[string]bool{"v": true, "servers": true, "username": true, "password": true, "tls": true, "transport": true, "xhttp_path": true, "xhttp_host": true, "sni": true, "pin_sha256": true, "encryption": true, "balance": true, "bond": true, "discover": true, "pipeline": true, "padding": true, "adaptive_padding": true, "adaptive_fragmentation": true, "timing_jitter": true, "connect_timeout": true, "attempt_timeout": true}
+	allowed := map[string]bool{"v": true, "servers": true, "username": true, "password": true, "tls": true, "transport": true, "xhttp_path": true, "xhttp_host": true, "sni": true, "pin_sha256": true, "encryption": true, "balance": true, "bond": true, "discover": true, "pipeline": true, "padding": true, "adaptive_padding": true, "adaptive_fragmentation": true, "traffic_shaping": true, "timing_jitter": true, "connect_timeout": true, "attempt_timeout": true}
 	allowed["protocol_policy"] = true
 	for decoder.More() {
 		token, err := decoder.Token()

@@ -75,13 +75,36 @@ func newAdaptivePaddingWriter(w io.Writer) *paddingWriter {
 // small application frames. Large records, disabled mode and both half-closes
 // retain their existing behavior. Jitter is local and does not alter the wire.
 func newTimedAdaptivePaddingWriter(w io.Writer, ctx context.Context, maxDelay time.Duration) *paddingWriter {
-	return newShapedAdaptivePaddingWriter(w, ctx, maxDelay, false)
+	return newShapedAdaptivePaddingWriter(w, ctx, maxDelay, false, false)
 }
 
 // Fragmentation changes only inner adaptive-v1 record boundaries. A peer
 // already using adaptive-v1 can decode the resulting bounded records.
-func newShapedAdaptivePaddingWriter(w io.Writer, ctx context.Context, maxDelay time.Duration, fragment bool) *paddingWriter {
-	return &paddingWriter{writer: w, adaptive: true, ctx: ctx, jitter: maxDelay, fragment: fragment}
+func newShapedAdaptivePaddingWriter(w io.Writer, ctx context.Context, maxDelay time.Duration, fragment, shape bool) *paddingWriter {
+	return &paddingWriter{writer: w, adaptive: true, ctx: ctx, jitter: maxDelay, fragment: fragment, shaping: shape}
+}
+
+// Shape padding within the cumulative, per-direction 1/8 payload budget.
+// Size classes operate inside HTTPS, not at TCP/TLS packet boundaries.
+func shapedPaddingLength(payload int, sample byte, allowance uint64) int {
+	limit := adaptivePaddingLimit(payload)
+	if allowance < uint64(limit) {
+		limit = int(allowance)
+	}
+	if limit == 0 {
+		return 0
+	}
+	base := payload + 3
+	for _, bucket := range [...]int{64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384} {
+		if bucket <= base {
+			continue
+		}
+		if bucket-base <= limit {
+			return bucket - base
+		}
+		break
+	}
+	return int(sample) % (limit + 1)
 }
 
 func (w *paddingWriter) nextPayloadSize(remaining int) (int, error) {
@@ -141,6 +164,9 @@ type paddingWriter struct {
 	ctx      context.Context
 	jitter   time.Duration
 	fragment bool
+	shaping  bool
+	shapePayload uint64
+	shapePadding uint64
 	err      error
 }
 
@@ -178,8 +204,15 @@ func (w *paddingWriter) Write(p []byte) (int, error) {
 		}
 		pad := int(buffer[2])
 		if w.adaptive {
-			// Limit added traffic for large records; no unnecessary delays.
-			pad %= adaptivePaddingLimit(n) + 1
+			if w.shaping {
+				// Optional zero-fill is <=12.5% of useful bytes per sender
+				// stream; mandatory 3-byte frame headers are not included.
+				allowance := (w.shapePayload+uint64(n))/stealth.PaddingBudgetDivisor - w.shapePadding
+				pad = shapedPaddingLength(n, buffer[2], allowance)
+			} else {
+				// Preserve the exact adaptive-v1 default padding behavior.
+				pad %= adaptivePaddingLimit(n) + 1
+			}
 			buffer[2] = byte(pad)
 		}
 		binary.BigEndian.PutUint16(buffer[:2], uint16(n))
@@ -196,6 +229,10 @@ func (w *paddingWriter) Write(p []byte) (int, error) {
 		if err := writePaddingFrame(w.writer, buffer[:3+n+pad]); err != nil {
 			w.err = err
 			return total, err
+		}
+		if w.shaping {
+			w.shapePayload += uint64(n)
+			w.shapePadding += uint64(pad)
 		}
 		total += n
 		p = p[n:]

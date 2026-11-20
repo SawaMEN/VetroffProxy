@@ -60,7 +60,7 @@ func (c *Client) DialContext(ctx context.Context, network, address string) (net.
 		upload = newPaddingWriter(upload)
 		download = newPaddingReader(download)
 	case adaptivePaddingVersion:
-		upload = newShapedAdaptivePaddingWriter(upload, lifetime, c.TimingJitter, c.AdaptiveFragmentation)
+		upload = newShapedAdaptivePaddingWriter(upload, lifetime, c.TimingJitter, c.AdaptiveFragmentation, c.TrafficShaping)
 		download = newAdaptivePaddingReader(download)
 	}
 	go func() {

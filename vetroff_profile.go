@@ -50,6 +50,7 @@ func ClientConfigFromLink(link string) (ClientConfig, error) {
 		Padding:                    imported.Padding,
 		AdaptivePadding:            imported.AdaptivePadding,
 		AdaptiveFragmentation:      imported.AdaptiveFragmentation,
+		TrafficShaping:             imported.TrafficShaping,
 		TimingJitter:               timingJitter,
 		Bond:                       imported.Bond,
 		BondDiscover:               imported.Discover,

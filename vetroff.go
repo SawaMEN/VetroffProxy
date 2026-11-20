@@ -71,6 +71,7 @@ type ClientConfig struct {
 	Padding                bool
 	AdaptivePadding        bool          // Continuous bounded framing; requires matching server support.
 	AdaptiveFragmentation  bool          // Opt-in inner adaptive-v1 record size variation.
+	TrafficShaping         bool          // Bound zero-fill padding to one-eighth of useful bytes.
 	TimingJitter           time.Duration // Per-small-record maximum delay (0..5ms); requires adaptive padding.
 	EnableUDP              bool          // Experimental datagram API and SOCKS5 UDP; off by default.
 	UDPMultiNode           bool          // Pin destination flows to configured UDP exits.
@@ -104,6 +105,9 @@ func NewClient(config ClientConfig) (*Client, error) {
 		return nil, err
 	}
 	if err := stealth.ValidateFragmentation(config.AdaptiveFragmentation, config.AdaptivePadding); err != nil {
+		return nil, err
+	}
+	if err := stealth.ValidateTrafficShaping(config.TrafficShaping, config.AdaptivePadding); err != nil {
 		return nil, err
 	}
 	if config.Padding && config.AdaptivePadding {
@@ -177,6 +181,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 	core.Padding = config.Padding
 	core.AdaptivePadding = config.AdaptivePadding
 	core.AdaptiveFragmentation = config.AdaptiveFragmentation
+	core.TrafficShaping = config.TrafficShaping
 	core.TimingJitter = config.TimingJitter
 	core.EnableUDP = config.EnableUDP
 	core.UDPStreaming = config.UDPStreaming
@@ -400,6 +405,7 @@ type ServerConfig struct {
 	Padding                  bool
 	AdaptivePadding          bool          // Accept opt-in adaptive-v1 mode alongside initial-v1.
 	AdaptiveFragmentation    bool          // Opt-in inner adaptive-v1 record size variation.
+	TrafficShaping           bool          // Bound downlink zero-fill padding to one-eighth.
 	TimingJitter             time.Duration // Max 5ms; only on small adaptive downlink records.
 	Cover                    http.Handler  // Public site for ordinary/rejected requests; nil returns 404.
 }
@@ -413,6 +419,9 @@ func NewServer(config ServerConfig) (*Server, error) {
 		return nil, err
 	}
 	if err := stealth.ValidateFragmentation(config.AdaptiveFragmentation, config.AdaptivePadding); err != nil {
+		return nil, err
+	}
+	if err := stealth.ValidateTrafficShaping(config.TrafficShaping, config.AdaptivePadding); err != nil {
 		return nil, err
 	}
 	if (config.Access == nil && !authheader.ValidCredentials(config.Credentials.Username, config.Credentials.Password)) || (config.Access != nil && (config.Credentials.Username != "" || config.Credentials.Password != "")) {
@@ -429,7 +438,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{core: &tunnel.Server{Egress: exit, RequireProtocolNegotiation: config.RequireProtocolNegotiation, Access: config.Access, Username: config.Credentials.Username, Password: config.Credentials.Password, XHTTPSettings: settings, AllowPrivate: config.AllowPrivateDestinations, EnableUDP: config.EnableUDP, MaxTunnels: config.MaxTunnels, DialTimeout: config.DialTimeout, Padding: config.Padding, AdaptivePadding: config.AdaptivePadding, AdaptiveFragmentation: config.AdaptiveFragmentation, TimingJitter: config.TimingJitter, Cover: config.Cover}}, nil
+	return &Server{core: &tunnel.Server{Egress: exit, RequireProtocolNegotiation: config.RequireProtocolNegotiation, Access: config.Access, Username: config.Credentials.Username, Password: config.Credentials.Password, XHTTPSettings: settings, AllowPrivate: config.AllowPrivateDestinations, EnableUDP: config.EnableUDP, MaxTunnels: config.MaxTunnels, DialTimeout: config.DialTimeout, Padding: config.Padding, AdaptivePadding: config.AdaptivePadding, AdaptiveFragmentation: config.AdaptiveFragmentation, TrafficShaping: config.TrafficShaping, TimingJitter: config.TimingJitter, Cover: config.Cover}}, nil
 }
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.TLS == nil || r.TLS.Version < tls.VersionTLS13 {
