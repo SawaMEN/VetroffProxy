@@ -5,6 +5,7 @@ import (
 
 	"github.com/SawaMEN/VetroffProxy/internal/contract"
 	"github.com/SawaMEN/VetroffProxy/internal/profile"
+	"github.com/SawaMEN/VetroffProxy/internal/stealth"
 )
 
 // ClientConfigFromLink validates the canonical vetroff:// share profile and
@@ -20,6 +21,10 @@ func ClientConfigFromLink(link string) (ClientConfig, error) {
 		return ClientConfig{}, err
 	}
 	attemptTimeout, err := time.ParseDuration(imported.AttemptTimeout)
+	if err != nil {
+		return ClientConfig{}, err
+	}
+	timingJitter, err := stealth.ParseTimingJitter(imported.TimingJitter, imported.AdaptivePadding)
 	if err != nil {
 		return ClientConfig{}, err
 	}
@@ -44,6 +49,7 @@ func ClientConfigFromLink(link string) (ClientConfig, error) {
 		Balance:                    imported.Balance,
 		Padding:                    imported.Padding,
 		AdaptivePadding:            imported.AdaptivePadding,
+		TimingJitter:               timingJitter,
 		Bond:                       imported.Bond,
 		BondDiscover:               imported.Discover,
 		BondPipeline:               pipeline,
