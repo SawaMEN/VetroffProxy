@@ -126,7 +126,13 @@ func (c *Client) openTunnel(ctx context.Context, target string) (stream *openStr
 		if mode := c.paddingMode(); mode != "" {
 			req.Header.Set(paddingHeader, mode)
 		}
-		c.requestProtocol(req, "tcp")
+		if err := c.requestProtocol(req, "tcp"); err != nil {
+			reader.Close()
+			writer.Close()
+			cancel()
+			release()
+			return nil, err
+		}
 		timer := time.AfterFunc(budget, func() { abort(context.DeadlineExceeded) })
 		resp, err := c.transport.RoundTrip(req)
 		timedOut := !timer.Stop()

@@ -11,6 +11,7 @@ import (
 	"github.com/SawaMEN/VetroffProxy/internal/cluster"
 	"github.com/SawaMEN/VetroffProxy/internal/egress"
 	"github.com/SawaMEN/VetroffProxy/internal/i18n"
+	"github.com/SawaMEN/VetroffProxy/internal/stealth"
 	"github.com/SawaMEN/VetroffProxy/internal/xhttp"
 	"io"
 	"net"
@@ -29,6 +30,11 @@ type Server struct {
 	// RequireProtocolNegotiation rejects authenticated builtin TCP/UDP requests.
 	// Outer WSS/XHTTP handshakes and cluster/bond extensions are separate.
 	RequireProtocolNegotiation bool
+	// ProbeKey requires a fresh HMAC proof on every authenticated TCP/UDP
+	// transport request. Empty keeps the existing cover/auth behavior.
+	ProbeKey string
+	probeMu sync.Mutex
+	probeUsed map[string]int64
 
 	// Access is mutually exclusive with builtin credentials; set before serving.
 	Access *access.Controller
@@ -75,8 +81,14 @@ type Server struct {
 }
 
 func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
-	if protocolRequest(r) && s.authorized(r) && !s.acceptProtocol(w, r) {
-		return
+	if protocolRequest(r) && s.authorized(r) {
+		if s.ProbeKey != "" && !s.acceptProbe(r) {
+			s.cover(w, r)
+			return
+		}
+		if !s.acceptProtocol(w, r) {
+			return
+		}
 	}
 	settings, settingsErr := xhttp.Normalize(s.XHTTPSettings.Path, s.XHTTPSettings.Host)
 	if settingsErr == nil && xhttp.MatchesAt(r, settings) && r.ProtoMajor == 2 && s.authorized(r) {
@@ -211,6 +223,40 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		// stack, after the destination and upload worker have been released.
 		panic(http.ErrAbortHandler)
 	}
+}
+
+// acceptProbe consumes an authenticated proof exactly once. The fixed-size
+// cache refuses new proofs when full rather than evicting live replay entries.
+func (s *Server) acceptProbe(r *http.Request) bool {
+	proof, present, valid := protocolValue(r.Header, stealth.ProbeHeader)
+	if !valid || !present {
+		return false
+	}
+	stamp, ok := stealth.VerifyProbeProof(s.ProbeKey, proof, time.Now())
+	if !ok {
+		return false
+	}
+	s.probeMu.Lock()
+	defer s.probeMu.Unlock()
+	if s.probeUsed == nil {
+		s.probeUsed = make(map[string]int64)
+	}
+	if _, exists := s.probeUsed[proof]; exists {
+		return false
+	}
+	if len(s.probeUsed) >= stealth.MaxProbeCache {
+		now := time.Now().Unix()
+		for token, expiry := range s.probeUsed {
+			if expiry < now {
+				delete(s.probeUsed, token)
+			}
+		}
+		if len(s.probeUsed) >= stealth.MaxProbeCache {
+			return false
+		}
+	}
+	s.probeUsed[proof] = stamp + int64(stealth.ProbeWindow/time.Second)
+	return true
 }
 
 func (s *Server) authorized(r *http.Request) bool {

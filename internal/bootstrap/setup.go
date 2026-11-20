@@ -38,6 +38,7 @@ type ServerConfig struct {
 	H3Listen              string                  `json:"h3_listen,omitempty"`
 	EnableUDP             bool                    `json:"enable_udp,omitempty"`
 	AdaptivePadding       bool                    `json:"adaptive_padding,omitempty"`
+	ProbeKey               string                  `json:"probe_key,omitempty"`
 	AdaptiveFragmentation bool                    `json:"adaptive_fragmentation,omitempty"`
 	TrafficShaping        bool                    `json:"traffic_shaping,omitempty"`
 	TimingJitter          string                  `json:"timing_jitter,omitempty"`
@@ -61,6 +62,7 @@ type Options struct {
 	Server, Certificate, PrivateKey, Output, SNI, CACertFile, JoinLinkFile, UpstreamCAFile, WebRoot string
 	TLSBackend, Transport, XHTTPPath, XHTTPHost                                                     string
 	EnableUDP, AdaptivePadding, AdaptiveFragmentation, TrafficShaping                               bool
+	ProbeGuard                                                                                     bool
 	TimingJitter                                                                                    time.Duration
 }
 
@@ -97,6 +99,9 @@ func ReadServer(path string) (ServerConfig, error) {
 		return ServerConfig{}, ErrConfig
 	}
 	if stealth.ValidateTrafficShaping(c.TrafficShaping, c.AdaptivePadding) != nil {
+		return ServerConfig{}, ErrConfig
+	}
+	if stealth.ValidateProbeKey(c.ProbeKey, c.ProtocolPolicy == contract.ProtocolStrict) != nil {
 		return ServerConfig{}, ErrConfig
 	}
 	if c.XHTTPPath != "" || c.XHTTPHost != "" {
@@ -136,6 +141,9 @@ func Generate(o Options) error {
 		return ErrSetup
 	}
 	if stealth.ValidateTrafficShaping(o.TrafficShaping, o.AdaptivePadding) != nil {
+		return ErrSetup
+	}
+	if o.ProbeGuard && o.ProtocolPolicy != contract.ProtocolStrict {
 		return ErrSetup
 	}
 	if o.ProtocolPolicy.Validate() != nil || o.ProtocolPolicy == contract.ProtocolStrict && o.JoinLinkFile != "" || o.AdaptivePadding && o.ProtocolPolicy != contract.ProtocolStrict {
@@ -223,6 +231,14 @@ func Generate(o Options) error {
 	config.Password = base64.RawURLEncoding.EncodeToString(secret[:])
 	linkConfig := profile.Config{Version: 1, Servers: []string{u.String()}, Username: config.Username, Password: config.Password, SNI: policy.SNI, PinSHA256: policy.PinSHA256, Encryption: "tls13", TLSBackend: o.TLSBackend, Transport: o.Transport, XHTTPPath: o.XHTTPPath, XHTTPHost: o.XHTTPHost, Bond: true, Discover: true, AdaptivePadding: o.AdaptivePadding, AdaptiveFragmentation: o.AdaptiveFragmentation, TrafficShaping: o.TrafficShaping, TimingJitter: stealth.FormatTimingJitter(o.TimingJitter)}
 	linkConfig.ProtocolPolicy = o.ProtocolPolicy
+	if o.ProbeGuard {
+		probeKey, err := stealth.GenerateProbeKey()
+		if err != nil {
+			return ErrSetup
+		}
+		config.ProbeKey = probeKey
+		linkConfig.ProbeKey = probeKey
+	}
 	if o.ProtocolPolicy == contract.ProtocolStrict {
 		linkConfig.Bond, linkConfig.Discover = false, false
 	}

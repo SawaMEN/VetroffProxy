@@ -70,6 +70,7 @@ type ClientConfig struct {
 	TLSClientProfile       string // Local opt-in NSS preferences; empty keeps the default.
 	Padding                bool
 	AdaptivePadding        bool          // Continuous bounded framing; requires matching server support.
+	ProbeKey               string        // 32-byte base64url probe secret; requires strict negotiation.
 	AdaptiveFragmentation  bool          // Opt-in inner adaptive-v1 record size variation.
 	TrafficShaping         bool          // Bound zero-fill padding to one-eighth of useful bytes.
 	TimingJitter           time.Duration // Per-small-record maximum delay (0..5ms); requires adaptive padding.
@@ -108,6 +109,9 @@ func NewClient(config ClientConfig) (*Client, error) {
 		return nil, err
 	}
 	if err := stealth.ValidateTrafficShaping(config.TrafficShaping, config.AdaptivePadding); err != nil {
+		return nil, err
+	}
+	if err := stealth.ValidateProbeKey(config.ProbeKey, config.RequireProtocolNegotiation); err != nil {
 		return nil, err
 	}
 	if config.Padding && config.AdaptivePadding {
@@ -180,6 +184,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 	core.BondPipeline = config.BondPipeline
 	core.Padding = config.Padding
 	core.AdaptivePadding = config.AdaptivePadding
+	core.ProbeKey = config.ProbeKey
 	core.AdaptiveFragmentation = config.AdaptiveFragmentation
 	core.TrafficShaping = config.TrafficShaping
 	core.TimingJitter = config.TimingJitter
@@ -404,6 +409,7 @@ type ServerConfig struct {
 	DialTimeout              time.Duration
 	Padding                  bool
 	AdaptivePadding          bool          // Accept opt-in adaptive-v1 mode alongside initial-v1.
+	ProbeKey                 string        // Fresh per-request HMAC proof secret; strict policy only.
 	AdaptiveFragmentation    bool          // Opt-in inner adaptive-v1 record size variation.
 	TrafficShaping           bool          // Bound downlink zero-fill padding to one-eighth.
 	TimingJitter             time.Duration // Max 5ms; only on small adaptive downlink records.
@@ -424,6 +430,9 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if err := stealth.ValidateTrafficShaping(config.TrafficShaping, config.AdaptivePadding); err != nil {
 		return nil, err
 	}
+	if err := stealth.ValidateProbeKey(config.ProbeKey, config.RequireProtocolNegotiation); err != nil {
+		return nil, err
+	}
 	if (config.Access == nil && !authheader.ValidCredentials(config.Credentials.Username, config.Credentials.Password)) || (config.Access != nil && (config.Credentials.Username != "" || config.Credentials.Password != "")) {
 		return nil, errors.New("server credentials required")
 	}
@@ -438,7 +447,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{core: &tunnel.Server{Egress: exit, RequireProtocolNegotiation: config.RequireProtocolNegotiation, Access: config.Access, Username: config.Credentials.Username, Password: config.Credentials.Password, XHTTPSettings: settings, AllowPrivate: config.AllowPrivateDestinations, EnableUDP: config.EnableUDP, MaxTunnels: config.MaxTunnels, DialTimeout: config.DialTimeout, Padding: config.Padding, AdaptivePadding: config.AdaptivePadding, AdaptiveFragmentation: config.AdaptiveFragmentation, TrafficShaping: config.TrafficShaping, TimingJitter: config.TimingJitter, Cover: config.Cover}}, nil
+	return &Server{core: &tunnel.Server{Egress: exit, RequireProtocolNegotiation: config.RequireProtocolNegotiation, Access: config.Access, Username: config.Credentials.Username, Password: config.Credentials.Password, XHTTPSettings: settings, AllowPrivate: config.AllowPrivateDestinations, EnableUDP: config.EnableUDP, MaxTunnels: config.MaxTunnels, DialTimeout: config.DialTimeout, Padding: config.Padding, AdaptivePadding: config.AdaptivePadding, ProbeKey: config.ProbeKey, AdaptiveFragmentation: config.AdaptiveFragmentation, TrafficShaping: config.TrafficShaping, TimingJitter: config.TimingJitter, Cover: config.Cover}}, nil
 }
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.TLS == nil || r.TLS.Version < tls.VersionTLS13 {

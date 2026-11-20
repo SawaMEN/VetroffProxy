@@ -68,6 +68,9 @@ type Client struct {
 	// AdaptivePadding enables continuous bounded frame padding (adaptive-v1).
 	// Mutually exclusive with Padding; configure before Serve.
 	AdaptivePadding bool
+	// ProbeKey enables per-request expiring HMAC proof with replay protection
+	// on servers configured for strict probe guarding. Configure before Serve.
+	ProbeKey string
 	// AdaptiveFragmentation varies only inner adaptive-v1 record sizes.
 	AdaptiveFragmentation bool
 	// TrafficShaping caps cumulative adaptive-v1 zero-fill padding.

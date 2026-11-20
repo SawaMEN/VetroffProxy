@@ -184,7 +184,9 @@ func (c *Client) exchangeUDP(ctx context.Context, wire []byte) (reply []byte, er
 	}
 	req.Header.Set("Proxy-Authorization", basicAuth(c.Username, c.Password))
 	req.Header.Set("Content-Type", "application/octet-stream")
-	c.requestProtocol(req, "udp-v1")
+	if err := c.requestProtocol(req, "udp-v1"); err != nil {
+		return nil, err
+	}
 	resp, err := c.transport.RoundTrip(req)
 	if err != nil {
 		return nil, err

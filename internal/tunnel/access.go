@@ -9,6 +9,7 @@ import (
 	"github.com/SawaMEN/VetroffProxy/internal/access"
 	"github.com/SawaMEN/VetroffProxy/internal/bond"
 	"github.com/SawaMEN/VetroffProxy/internal/cluster"
+	"github.com/SawaMEN/VetroffProxy/internal/stealth"
 	"github.com/SawaMEN/VetroffProxy/internal/xhttp"
 )
 
@@ -22,6 +23,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !candidate {
 		s.cover(w, r)
 		return
+	}
+	// Hide managed-access denial differences from unauthenticated probes
+	// before spending access/quota resources. Replay is checked after auth.
+	if s.ProbeKey != "" && protocolRequest(r) {
+		token, present, valid := protocolValue(r.Header, stealth.ProbeHeader)
+		if !valid || !present {
+			s.cover(w, r)
+			return
+		}
+		if _, ok := stealth.VerifyProbeProof(s.ProbeKey, token, time.Now()); !ok {
+			s.cover(w, r)
+			return
+		}
 	}
 	ctx, done, err := s.Access.Begin(r)
 	if err != nil {

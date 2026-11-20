@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/SawaMEN/VetroffProxy/internal/buildinfo"
+	"github.com/SawaMEN/VetroffProxy/internal/stealth"
 )
 
 const protocolVersionHeader = "X-Vetroff-Version"
@@ -122,9 +123,16 @@ func (s *Server) acceptProtocol(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-func (c *Client) requestProtocol(r *http.Request, capability string) {
+func (c *Client) requestProtocol(r *http.Request, capability string) error {
+	if c.ProbeKey != "" {
+		proof, err := stealth.NewProbeProof(c.ProbeKey)
+		if err != nil {
+			return err
+		}
+		r.Header.Set(stealth.ProbeHeader, proof)
+	}
 	if !c.RequireProtocolNegotiation {
-		return
+		return nil
 	}
 	r.Header.Set(protocolVersionHeader, buildinfo.ProtocolDraft)
 	if capability == "tcp" {
@@ -136,6 +144,7 @@ func (c *Client) requestProtocol(r *http.Request, capability string) {
 		}
 	}
 	r.Header.Set(protocolRequireHeader, capability)
+	return nil
 }
 
 func (c *Client) verifyProtocol(r *http.Response, capability string) error {
