@@ -59,7 +59,7 @@ type Options struct {
 	Server, Certificate, PrivateKey, Output, SNI, CACertFile, JoinLinkFile, UpstreamCAFile, WebRoot string
 	TLSBackend, Transport, XHTTPPath, XHTTPHost                                                     string
 	EnableUDP, AdaptivePadding                                                                      bool
-	TimingJitter                                                                                   time.Duration
+	TimingJitter                                                                                    time.Duration
 }
 
 var ErrConfig = errors.New("invalid server configuration")
