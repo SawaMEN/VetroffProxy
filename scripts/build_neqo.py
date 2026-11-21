@@ -6,6 +6,7 @@ never call this script and do not contain this experimental backend.
 """
 import argparse
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
@@ -64,7 +65,7 @@ def download(url, destination, expected):
             mozilla_runtime.check_hash(temp, expected)
             os.replace(temp, destination)
             return
-        except urllib.error.URLError as exc:
+        except (urllib.error.URLError, TimeoutError, http.client.IncompleteRead) as exc:
             last_error = exc
         finally:
             temp.unlink(missing_ok=True)

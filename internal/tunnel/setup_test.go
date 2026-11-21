@@ -173,6 +173,34 @@ func TestFallbackTotalBudget(t *testing.T) {
 		t.Fatalf("per-origin budgets extended global budget: %v", elapsed)
 	}
 }
+
+func TestConnectResponseAtSetupDeadline(t *testing.T) {
+	client, err := NewClient("https://primary.example", "alice", "secret", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if err := client.SetFallbackServers([]string{"https://backup.example"}); err != nil {
+		t.Fatal(err)
+	}
+	client.ConnectTimeout = time.Second
+	client.FallbackAttemptTimeout = 10 * time.Millisecond
+	client.transport = stage3RoundTripper(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "primary.example" {
+			t.Fatalf("retried after the primary returned an HTTP response: %s", r.URL.Host)
+		}
+		<-r.Context().Done()
+		return &http.Response{ProtoMajor: 2, StatusCode: http.StatusOK, Body: http.NoBody}, nil
+	})
+	stream, err := client.openTunnel(t.Context(), "example.com:443")
+	if stream != nil {
+		stream.close()
+		t.Fatal("accepted a response after the setup deadline")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("want deadline exceeded, got %v", err)
+	}
+}
 func TestFallbackConfiguration(t *testing.T) {
 	client, err := NewClient("https://example.com", "alice", "secret", "")
 	if err != nil {

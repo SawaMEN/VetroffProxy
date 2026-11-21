@@ -15,7 +15,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: necko-source-${{ github.ref }}
+  group: necko-source-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   native:
